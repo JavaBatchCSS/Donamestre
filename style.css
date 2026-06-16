@@ -1,45 +1,50 @@
-body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0b0f19; color: #f1f5f9; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
-header { width: 100%; max-width: 950px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; gap: 15px; flex-wrap: wrap; }
-h1 { font-size: 22px; font-weight: 600; letter-spacing: -0.5px; background: linear-gradient(90deg, #818cf8, #c084fc); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin: 0; }
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: #070a13; color: #f1f5f9; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; }
+header { width: 100%; max-width: 950px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; gap: 15px; flex-wrap: wrap; }
 
-.config-ip { display: flex; gap: 8px; background: rgba(255,255,255,0.05); padding: 6px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1); }
-.config-ip input { background: transparent; border: none; color: white; padding: 6px 12px; outline: none; font-family: monospace; font-size: 14px; width: 140px; }
-.config-ip button { background: #6366f1; border: none; color: white; padding: 6px 14px; border-radius: 8px; font-weight: 600; cursor: pointer; transition: background 0.2s; }
-.config-ip button:hover { background: #4f46e5; }
+.brand-container { display: flex; flex-direction: column; }
+.logo { font-size: 28px; font-weight: 800; letter-spacing: -1px; color: #ffffff; margin: 0; display: flex; align-items: center; gap: 2px; }
+.sub-logo { font-size: 11px; color: #6366f1; font-weight: 700; letter-spacing: 2px; margin-top: 2px; }
 
-.status-badge { padding: 6px 14px; border-radius: 30px; font-size: 12px; font-weight: 600; transition: all 0.3s; }
+/* Le bouton "O" de Donamestre */
+.power-btn { background: rgba(239, 68, 68, 0.1); border: 2px solid rgba(239, 68, 68, 0.4); color: #ef4444; width: 32px; height: 32px; border-radius: 50%; font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: 0 0 12px rgba(239, 68, 68, 0.2); padding: 0; font-weight: bold; }
+.power-btn:hover { transform: scale(1.1); box-shadow: 0 0 20px rgba(239, 68, 68, 0.5); }
+.power-btn.online { background: rgba(16, 185, 129, 0.15); border-color: #10b981; color: #10b981; box-shadow: 0 0 15px rgba(16, 185, 129, 0.4); text-shadow: 0 0 5px #10b981; }
+
+.config-ip { display: flex; gap: 8px; background: rgba(255,255,255,0.03); padding: 6px; border-radius: 14px; border: 1px solid rgba(255,255,255,0.06); backdrop-filter: blur(10px); }
+.config-ip input { background: transparent; border: none; color: white; padding: 6px 12px; outline: none; font-family: monospace; font-size: 13px; width: 160px; }
+.config-ip button { background: #4f46e5; border: none; color: white; padding: 6px 16px; border-radius: 10px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+.config-ip button:hover { background: #6366f1; }
+
+.status-badge { padding: 6px 14px; border-radius: 30px; font-size: 11px; font-weight: 700; letter-spacing: 0.5px; transition: all 0.3s; }
 .connected { background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.2); color: #10b981; }
 .disconnected { background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.2); color: #ef4444; }
 
 .dashboard { width: 100%; max-width: 950px; display: grid; grid-template-columns: 1fr; gap: 20px; }
-@media (min-width: 768px) { .dashboard { grid-template-columns: 1.6fr 1fr; } }
+@media (min-width: 768px) { .dashboard { grid-template-columns: 1.5fr 1fr; } }
 
-.card { background: rgba(17, 24, 39, 0.7); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 20px; padding: 20px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5); }
-.monitor-wrapper { position: relative; width: 100%; background: #030712; border-radius: 14px; overflow: hidden; aspect-ratio: 4/3; display: flex; align-items: center; justify-content: center; border: 1px solid rgba(255,255,255,0.05); }
+.card { background: rgba(10, 15, 30, 0.7); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 24px; padding: 24px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.6); }
+.monitor-wrapper { position: relative; width: 100%; background: #02040a; border-radius: 16px; overflow: hidden; aspect-ratio: 4/3; display: flex; align-items: center; justify-content: center; border: 1px solid rgba(255,255,255,0.03); }
 .monitor-wrapper img { width: 100%; height: 100%; object-fit: contain; }
 
 #rec-badge { position: absolute; top: 15px; left: 15px; background: #ef4444; color: white; padding: 5px 12px; border-radius: 20px; font-size: 11px; font-weight: bold; display: none; animation: pulse 1s infinite; }
 @keyframes pulse { 50% { opacity: 0.5; } }
 
 .action-bar { display: flex; gap: 12px; margin-top: 15px; }
-.btn { flex: 1; padding: 12px; border: none; border-radius: 12px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s ease; display: flex; align-items: center; justify-content: center; gap: 8px; color: white; }
-.btn-primary { background: linear-gradient(135deg, #4f46e5, #6366f1); box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3); }
-.btn-primary:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(99, 102, 241, 0.4); }
+.btn { flex: 1; padding: 14px; border: none; border-radius: 14px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s ease; display: flex; align-items: center; justify-content: center; gap: 8px; color: white; }
+.btn-primary { background: linear-gradient(135deg, #4f46e5, #6366f1); box-shadow: 0 4px 15px rgba(99, 102, 241, 0.25); }
+.btn-primary:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(99, 102, 241, 0.35); }
 .btn-danger { background: #dc2626; }
 .btn-danger:hover { background: #b91c1c; transform: translateY(-2px); }
 
-.ptz-section { display: flex; flex-direction: column; align-items: center; justify-content: center; }
-.dpad { display: grid; grid-template-columns: repeat(3, 64px); grid-template-rows: repeat(3, 64px); gap: 12px; margin: 20px 0; }
-.btn-joy { background: #1f2937; border: 1px solid rgba(255, 255, 255, 0.05); color: #9ca3af; font-size: 18px; border-radius: 16px; cursor: pointer; transition: all 0.15s ease; display: flex; align-items: center; justify-content: center; }
-.btn-joy:hover { background: #374151; color: #fff; border-color: #6366f1; }
-.btn-joy:active { transform: scale(0.92); }
-.btn-home { background: rgba(99, 102, 241, 0.1); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.2); }
+.ptz-section { display: flex; flex-direction: column; justify-content: space-between; }
+.dpad-horizontal { display: flex; width: 100%; gap: 10px; margin: 30px 0; }
+.btn-joy { flex: 1; background: #131926; border: 1px solid rgba(255, 255, 255, 0.03); color: #9ca3af; font-size: 13px; font-weight: 700; height: 55px; border-radius: 16px; cursor: pointer; transition: all 0.15s ease; }
+.btn-joy:hover { background: #1e2638; color: #fff; border-color: #6366f1; }
+.btn-joy:active { transform: scale(0.95); }
+.btn-home { background: rgba(99, 102, 241, 0.08); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.15); }
 
-.btn-secondary { background: #374151; width: 100%; padding: 11px; border-radius: 10px; font-weight: 500; font-size: 13px; border: none; color: #e5e7eb; cursor: pointer; }
-.btn-secondary:hover { background: #4b5563; }
-
-.settings-track { margin-top: 25px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 20px; width: 100%; }
+.settings-track { border-top: 1px solid rgba(255,255,255,0.05); padding-top: 20px; width: 100%; }
 .track-group { margin-bottom: 18px; }
-.track-label { display: flex; justify-content: space-between; font-size: 12px; color: #94a3b8; margin-bottom: 6px; }
+.track-label { display: flex; justify-content: space-between; font-size: 12px; color: #94a3b8; margin-bottom: 8px; }
 .track-val { color: #818cf8; font-family: monospace; font-weight: 600; }
-.slider { width: 100%; accent-color: #6366f1; background: #1e293b; height: 6px; border-radius: 4px; outline: none; }
+.slider { width: 100%; accent-color: #6366f1; background: #131926; height: 6px; border-radius: 4px; outline: none; }
