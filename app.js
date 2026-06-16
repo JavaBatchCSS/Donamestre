@@ -5,25 +5,25 @@ let logCount = 0;
 let isAiReady = false;
 let faceDetectionInterval = null;
 
-// SÉCURITÉ ANTI-REBOND POUR LE MOTEUR (Évite le crash de l'ESP32)
+// SÉCURITÉ RESEAU : ANTI-REBOND (DEBOUNCE)
 let lastRequestTime = 0;
 const REQUEST_THROTTLE_MS = 250; 
 
-// VARIABLES D'ENREGISTREMENT VIDÉO LOCAL
+// MODULE D'ENREGISTREMENT LOCAL VIDEO
 let mediaRecorder;
 let recordedChunks = [];
 let isRecording = false;
 
-// BASE DE DONNÉES DES COMMANDES POUR LE PANNEAU LATÉRAL
+// BASE DE DONNÉES DU DICTIONNAIRE LATÉRAL
 const COMMANDS_DATABASE = [
     { syntax: "home", desc: "Exécute le recalage initial sur la butée physique." },
     { syntax: "left", desc: "Fait tourner l'axe horizontal vers la gauche." },
     { syntax: "right", desc: "Fait tourner l'axe horizontal vers la droite." },
-    { syntax: "vision-noire", desc: "Active l'intensification lumineuse verte." },
+    { syntax: "vision-noire", desc: "Active l'intensification lumineuse matricielle verte." },
     { syntax: "high-contrast", desc: "Bascule sur le filtre de surveillance haute-définition." },
-    { syntax: "normal", desc: "Réinitialise tous les filtres graphiques." },
-    { syntax: "quality=10", desc: "Configure la compression JPEG (Haute Qualité)." },
-    { syntax: "quality=30", desc: "Configure la compression (Basse Qualité / Fluide)." },
+    { syntax: "normal", desc: "Réinitialise tous les filtres graphiques par défaut." },
+    { syntax: "quality=10", desc: "Configure la compression JPEG sur l'ESP (Haute Qualité)." },
+    { syntax: "quality=30", desc: "Configure la compression sur l'ESP (Basse Qualité / Fluide)." },
     { syntax: "status", desc: "Interroge l'état matériel et logiciel de l'hôte local." },
     { syntax: "clear", desc: "Efface l'intégralité de l'historique de la console." }
 ];
@@ -34,7 +34,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     initAiEngine();
 });
 
-// SYSTÈME DE LOGS ET COPIE
+// LOGS SYSTEME ET COPIE PRESSE-PAPIER
 function appendLog(message, type = 'sys') {
     const consoleBody = document.getElementById('console-output');
     if (!consoleBody) return;
@@ -52,7 +52,7 @@ function copyLogs() {
     if (!consoleBody) return;
     navigator.clipboard.writeText(consoleBody.innerText)
         .then(() => appendLog("Succès : Les logs ont été copiés dans le presse-papier.", "success"))
-        .catch(() => alert("Erreur lors de la copie."));
+        .catch(() => alert("Erreur lors de l'accès au presse-papier."));
 }
 
 function clearConsole() {
@@ -61,6 +61,7 @@ function clearConsole() {
     document.getElementById('log-count').innerText = "0";
 }
 
+// CHANGEMENT D'ONGLET
 function switchTab(tabId) {
     document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
     document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
@@ -68,8 +69,8 @@ function switchTab(tabId) {
     event.currentTarget.classList.add('active');
 }
 
-// GESTION DU PANNEAU LATÉRAL (Recherche et Injection)
-function buildSidebarCommands() {
+// FILTRE ET RECHERCHE DU PANNEAU LATÉRAL
+void function buildSidebarCommands() {
     const container = document.getElementById('commands-container');
     container.innerHTML = '';
     COMMANDS_DATABASE.forEach(cmd => {
@@ -91,13 +92,13 @@ function filterCommands() {
 }
 
 function executeDirectCommand(syntax) {
-    appendLog(`Exécution : ${syntax}`, 'cmd');
+    appendLog(`Commande reçue : ${syntax}`, 'cmd');
     if (syntax === 'clear') clearConsole();
     else if (['left', 'right', 'home'].includes(syntax)) moveH(syntax);
     else if (['normal', 'vision-noire', 'retro', 'high-contrast'].includes(syntax)) setPreset(syntax);
     else if (syntax.startsWith('quality=')) sendRawControl('quality', syntax.split('=')[1]);
     else if (syntax === 'status') appendLog(`Liaison=${isSystemOn} // IA=${isAiReady}`, 'sys');
-    else appendLog(`Commande non reconnue`, 'err');
+    else appendLog(`Syntaxe inconnue.`, 'err');
 }
 
 function handleConsoleInput(e) {
@@ -110,10 +111,10 @@ function handleConsoleInput(e) {
     }
 }
 
-// LIAISON RÉSEAU ET GESTION DU FLUX VIDÉO
+// CONNEXION RESEAU LOCAL SANS DISCRIMINATION DE SÉCURITÉ
 function connectSystem() {
     const input = document.getElementById('esp-ip').value.trim();
-    if (!input) return alert("Veuillez spécifier une adresse IP.");
+    if (!input) return alert("Spécifiez une IP valide.");
     
     espIp = input.replace(/^https?:\/\//, '').replace(/\/$/, '');
     localStorage.setItem('donamestre_ip', espIp);
@@ -127,9 +128,10 @@ function connectSystem() {
                 if (!isSystemOn) toggleSystem();
             }
         })
-        .catch(() => appendLog("Échec réseau : Vérifiez l'adresse IP saisie ou l'alimentation.", "err"));
+        .catch(() => appendLog("Échec réseau : l'appareil est injoignable ou hors-ligne.", "err"));
 }
 
+// TOGGLE GLOBAL : LANCEUR DU FLUX INTEGRAL SANS CACHE AGRESSIF
 function toggleSystem() {
     if (!espIp) return;
     const glyph = document.getElementById('power-main');
@@ -138,12 +140,23 @@ function toggleSystem() {
     
     if (isSystemOn) {
         glyph.classList.add('active');
-        // Flux direct sans attribut crossorigin bloquant
-        img.src = `http://${espIp}/stream`;
+        
+        // Neutralisation absolue de tout blocage Cross-Origin sur le réseau local
+        img.removeAttribute('crossorigin'); 
+        
+        // Forçage de rafraîchissement d'URL par Timestamp pour bypass le cache du navigateur
+        img.src = `http://${espIp}/stream?cb=${Date.now()}`;
+        
+        // Correctif Structurel : Ré-activation de la visibilité CSS immédiate
+        img.style.display = "block";
+        img.style.width = "100%";
+        img.style.height = "100%";
+        
         appendLog("Liaison vidéo validée. Flux direct activé.", "success");
     } else {
         glyph.classList.remove('active');
         img.src = ''; 
+        img.style.display = "none";
         if (faceDetectionInterval) clearInterval(faceDetectionInterval);
         document.getElementById('toggle-face').checked = false;
         const c = document.getElementById('ai-overlay'); if (c) c.remove();
@@ -151,7 +164,7 @@ function toggleSystem() {
     }
 }
 
-// IA - TÉLÉCHARGÉE DEPUIS LE DÉPÔT STATIQUE GITHUB
+// CHARGEMENT DE L'IA DEPUIS LE DEPÔT GITHUB PAGES STATIQUE ET TRANSPARENT
 async function initAiEngine() {
     try {
         await faceapi.nets.tinyFaceDetector.loadFromUri('https://vladmandic.github.io/face-api/model/');
@@ -159,9 +172,9 @@ async function initAiEngine() {
         const badge = document.getElementById('ai-status');
         badge.innerText = "IA Locale Prête";
         badge.className = "status-badge ai-active";
-        appendLog("Réseau de neurones TinyFace chargé depuis le dépôt GitHub public.", "success");
+        appendLog("Réseau de neurones TinyFace chargé depuis le dépôt GitHub Pages public.", "success");
     } catch (err) {
-        appendLog("Erreur de chargement des poids de neurones.", "err");
+        appendLog("Erreur critique d'initialisation de l'IA.", "err");
     }
 }
 
@@ -197,12 +210,11 @@ function toggleFaceDetection() {
     }
 }
 
-// ENREGISTREMENT VIDÉO LOCAL
+// ENREGISTREMENT DU FLUX LOCAL COMPATIBLE CANVAS LAYER
 function toggleRecording() {
     const btn = document.getElementById('rec-btn');
     const img = document.getElementById('video-stream');
-    
-    if (!isSystemOn || !img.naturalWidth) return alert("Aucun flux actif à filmer.");
+    if (!isSystemOn || !img.naturalWidth) return alert("Aucun flux vidéo actif détecté.");
     
     if (isRecording) {
         mediaRecorder.stop();
@@ -216,7 +228,7 @@ function toggleRecording() {
         captureCanvas.height = img.naturalHeight;
         const ctx = captureCanvas.getContext('2d');
         
-        const stream = captureCanvas.captureStream(20);
+        const stream = captureCanvas.captureStream(20); // 20 FPS nominal
         mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp8' });
         
         mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) recordedChunks.push(e.data); };
@@ -225,9 +237,9 @@ function toggleRecording() {
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `DONAMESTRE_REC_${Date.now()}.webm`;
+            a.download = `DONAMESTRE_CAPTURE_${Date.now()}.webm`;
             a.click();
-            appendLog("Fichier vidéo généré et enregistré localement.", "success");
+            appendLog("Fichier vidéo généré et sauvegardé localement.", "success");
         };
 
         mediaRecorder.start();
@@ -243,24 +255,24 @@ function toggleRecording() {
             requestAnimationFrame(drawFrame);
         }
         drawFrame();
-        appendLog("Capture vidéo en cours...", "cmd");
+        appendLog("Capture vidéo locale en cours...", "cmd");
     }
 }
 
-// CONTRÔLE MATÉRIEL PTZ ET FILTRES
+// ENVOI PTZ BRUTE PROTEGE CONTRE LES SURCHARGES MATERIELLES
 function moveH(dir) {
     if (!isSystemOn || !espIp) return;
     
     const now = Date.now();
     if (now - lastRequestTime < REQUEST_THROTTLE_MS) {
-        appendLog(`Commande rejetée : Temporisation de sécurité réseau active.`, "err");
+        appendLog(`Commande transitoire bloquée (Sécurité anti-surcharge).`, "err");
         return;
     }
     lastRequestTime = now;
 
     fetch(`http://${espIp}/ptz?dir=${dir}`, { mode: 'cors' })
-        .then(() => appendLog(`Axe PTZ -> ${dir}`, "success"))
-        .catch(() => appendLog(`Échec de transmission PTZ.`, "err"));
+        .then(() => appendLog(`Axe PTZ -> Déplacement ${dir} exécuté.`, "success"))
+        .catch(() => appendLog(`Échec de transmission vers l'axe mécanique.`, "err"));
 }
 
 function sendRawControl(cmd, val) { 
