@@ -140,15 +140,13 @@ function toggleSystem() {
     
     if (isSystemOn) {
         glyph.classList.add('active');
-        
-        // Neutralisation absolue de tout blocage Cross-Origin sur le réseau local
         img.removeAttribute('crossorigin'); 
         
-        // Forçage de rafraîchissement d'URL par Timestamp pour bypass le cache du navigateur
+        // On injecte le flux
         img.src = `http://${espIp}/stream?cb=${Date.now()}`;
         
-        // Correctif Structurel : Ré-activation de la visibilité CSS immédiate
-        img.style.display = "block";
+        // CORRECTIF : On la rend visible via l'opacité, l'image est déjà dans le DOM
+        img.style.opacity = "1";
         img.style.width = "100%";
         img.style.height = "100%";
         
@@ -156,7 +154,7 @@ function toggleSystem() {
     } else {
         glyph.classList.remove('active');
         img.src = ''; 
-        img.style.display = "none";
+        img.style.opacity = "0"; // On la remet transparente
         if (faceDetectionInterval) clearInterval(faceDetectionInterval);
         document.getElementById('toggle-face').checked = false;
         const c = document.getElementById('ai-overlay'); if (c) c.remove();
