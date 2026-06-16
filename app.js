@@ -3,13 +3,14 @@ const feed = document.getElementById('livestream');
 const canvas = document.getElementById('hidden-canvas');
 const ctx = canvas.getContext('2d');
 const statusBadge = document.getElementById('status');
+const powerBtn = document.getElementById('power-trigger');
+let isSystemOn = false;
 let recorder;
 let pieces = [];
 let activeRec = false;
 
 if (baseIp) {
     document.getElementById('esp-ip').value = baseIp;
-    initConnection();
 }
 
 function saveIP() {
@@ -17,54 +18,68 @@ function saveIP() {
     if (inputIp) {
         baseIp = inputIp;
         localStorage.setItem('esp_ip', baseIp);
+        if(isSystemOn) initConnection();
+    }
+}
+
+function toggleSystemPower() {
+    if (!baseIp) return alert("Veuillez d'abord configurer l'adresse IP de l'ESP32.");
+    isSystemOn = !isSystemOn;
+    
+    if (isSystemOn) {
+        powerBtn.classList.add('online');
         initConnection();
+    } else {
+        powerBtn.classList.remove('online');
+        statusBadge.innerText = "● SYSTEM OFF";
+        statusBadge.className = "status-badge disconnected";
+        feed.src = "";
     }
 }
 
 function initConnection() {
-    statusBadge.innerText = "● CONNEXION...";
+    if(!isSystemOn) return;
+    statusBadge.innerText = "● RECH. SIGNAL...";
     statusBadge.className = "status-badge disconnected";
     
-    // Test de l'IP avec un ping sur une commande neutre
     fetch(`http://${baseIp}/control?cmd=ping`, { mode: 'cors' })
         .then(() => {
-            statusBadge.innerText = "● LIVE STREAMING";
+            statusBadge.innerText = "● DYN_LIVE ACTIVE";
             statusBadge.className = "status-badge connected";
             feed.src = `http://${baseIp}/stream`;
         })
         .catch(err => {
-            console.error("Erreur de connexion ESP32:", err);
-            statusBadge.innerText = "● ERREUR DE LIAISON";
+            console.error("Liaison interrompue:", err);
+            statusBadge.innerText = "● LIEN ROMPU";
             statusBadge.className = "status-badge disconnected";
             feed.src = "";
         });
 }
 
 function sendPTZ(axis) {
-    if (!baseIp) return alert("Veuillez d'abord configurer l'adresse IP de l'ESP32.");
+    if (!baseIp || !isSystemOn) return;
     fetch(`http://${baseIp}/ptz?dir=${axis}`, { mode: 'cors' }).catch(e => console.error(e));
 }
 
 function pushConfig(param, value) {
-    if (!baseIp) return;
+    if (!baseIp || !isSystemOn) return;
     fetch(`http://${baseIp}/control?cmd=${param}&val=${value}`, { mode: 'cors' })
-        .then(res => res.text())
         .then(() => {
             if(param === 'sharpness') {
                 document.getElementById('val-sharpness').innerText = {"-2":"Flou", "-1":"Lissé", "0":"Normal", "1":"Précis", "2":"Très Net"}[value];
             } else if(param === 'quality') {
-                document.getElementById('val-quality').innerText = value <= 8 ? "Ultra-HD (Lent)" : (value >= 20 ? "Fluide (FPS+)" : "Optimale");
+                document.getElementById('val-quality').innerText = value <= 8 ? "Ultra-HD" : (value >= 20 ? "Fluide" : "Optimale");
             }
         });
 }
 
 function capturePhoto() {
-    if (!feed.naturalWidth) return;
+    if (!feed.naturalWidth || !isSystemOn) return;
     canvas.width = feed.naturalWidth;
     canvas.height = feed.naturalHeight;
     ctx.drawImage(feed, 0, 0, canvas.width, canvas.height);
     const link = document.createElement('a');
-    link.download = `S3_PRO_${Date.now()}.jpg`;
+    link.download = `DONAMESTRE_${Date.now()}.jpg`;
     link.href = canvas.toDataURL('image/jpeg', 0.98);
     link.click();
 }
@@ -72,6 +87,8 @@ function capturePhoto() {
 function toggleRecording() {
     const btn = document.getElementById('rec-btn');
     const badge = document.getElementById('rec-badge');
+    if (!isSystemOn) return;
+    
     if (activeRec) {
         recorder.stop();
         activeRec = false;
@@ -90,7 +107,7 @@ function toggleRecording() {
             const blob = new Blob(pieces, { type: 'video/webm' });
             const a = document.createElement('a');
             a.href = URL.createObjectURL(blob);
-            a.download = `S3_CAPTURE_${Date.now()}.webm`;
+            a.download = `DONAMESTRE_CAP_${Date.now()}.webm`;
             a.click();
         };
         recorder.start();
