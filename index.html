@@ -3,86 +3,85 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Donamestre Quantum Console</title>
+    <title>Donamestre Executive Control</title>
     <link rel="stylesheet" href="style.css">
     <script defer src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js"></script>
 </head>
 <body>
     <div class="app-container">
-        <header>
+        <header class="pro-header">
             <div class="brand-zone">
-                <h1 class="glow-logo">D<span class="power-glyph" id="power-main" onclick="toggleSystem()">⏻</span>NAMESTRE</h1>
-                <div class="sub-brand">QUANTUM HUB // AXIS-H PRO</div>
+                <h1 class="pro-logo">D<span class="power-glyph" id="power-main" onclick="toggleSystem()">⏻</span>NAMESTRE</h1>
+                <div class="sub-brand">AXIS-H MONITORING INTERFACE</div>
             </div>
-            <div class="connexion-zone">
-                <input type="text" id="esp-ip" class="cyber-input" placeholder="Adresse IP de la caméra (ex: 192.168.1.50)">
-                <button onclick="connectSystem()" class="cyber-btn btn-connect">LIAISON</button>
+            <div class="connection-zone">
+                <input type="text" id="esp-ip" class="pro-input" placeholder="Adresse IP (ex: 192.168.1.50)">
+                <button onclick="connectSystem()" class="pro-btn btn-primary">Lier l'appareil</button>
             </div>
         </header>
 
         <div class="tabs-nav">
-            <button class="tab-btn active" onclick="switchTab('studio')">🎬 STUDIO LIVE</button>
-            <button class="tab-btn" onclick="switchTab('terminal')">📟 CONSOLE INTERACTIVE <span id="log-count">0</span></button>
+            <button class="tab-btn active" onclick="switchTab('studio')">🎬 Studio Live</button>
+            <button class="tab-btn" onclick="switchTab('terminal')">📟 Console & Commandes <span id="log-count" class="badge">0</span></button>
         </div>
 
         <main class="main-content">
             <div id="tab-studio" class="tab-content active">
                 <div class="studio-grid">
-                    <div class="video-card">
+                    <div class="pro-card video-card">
                         <div class="video-viewport">
-                            <div class="secure-badge">🔒 ANALYSE LOCALE PRIVÉE</div>
-                            <div id="ai-status" class="ai-badge">IA INDISPONIBLE</div>
+                            <div class="status-badge secure">Réseau Local Sécurisé</div>
+                            <div id="ai-status" class="status-badge ai-inactive">IA Inactive</div>
                             <div class="canvas-container" id="canvas-wrapper">
-                                <img id="video-stream" src="" alt="En attente de liaison..." crossorigin="anonymous">
-                                </div>
+                                <img id="video-stream" src="" alt="Aucun flux vidéo actif. Connectez l'ESP32.">
+                            </div>
                         </div>
-                        <div class="quick-actions">
-                            <button class="cyber-btn" onclick="rotateVideo()">🔄 Rotation 90°</button>
-                            <button class="cyber-btn btn-snapshot" onclick="takeSnapshot()">📸 Capture Image</button>
-                            <button class="cyber-btn btn-record" id="rec-btn" onclick="toggleRecording()">🔴 Enregistrer Flux</button>
+                        <div class="action-bar">
+                            <button class="pro-btn" onclick="rotateVideo()">🔄 Rotation 90°</button>
+                            <button class="pro-btn btn-secondary" onclick="takeSnapshot()">📸 Capture HD</button>
+                            <button class="pro-btn btn-danger" id="rec-btn" onclick="toggleRecording()">🔴 Enregistrer</button>
                         </div>
                     </div>
 
-                    <div class="controls-card">
-                        <div class="control-section">
-                            <h3>👁️ RECONNAISSANCE & POST-TRAITEMENT</h3>
-                            <div class="toggle-group">
-                                <label class="cyber-switch">
-                                    <input type="checkbox" id="toggle-face" onchange="toggleFaceDetection()">
-                                    <span class="cyber-slider"></span>
-                                </label>
-                                <span class="label-text">Activer la Détection Faciale IA</span>
-                            </div>
+                    <div class="pro-card settings-card">
+                        <div class="section-title">Traitement d'image (Local)</div>
+                        
+                        <div class="toggle-row">
+                            <span class="label-text">Détection faciale active</span>
+                            <label class="pro-switch">
+                                <input type="checkbox" id="toggle-face" onchange="toggleFaceDetection()">
+                                <span class="switch-slider"></span>
+                            </label>
                         </div>
 
-                        <div class="control-section">
-                            <h3>🎨 FILTRES NUMÉRIQUES GPU</h3>
-                            <div class="control-group">
-                                <label>Luminosité : <span id="val-bright" class="neon-text">100%</span></label>
-                                <input type="range" min="30" max="250" value="100" class="slider" id="slider-bright" oninput="applyFilters()">
-                            </div>
-                            <div class="control-group">
-                                <label>Saturation : <span id="val-saturate" class="neon-text">100%</span></label>
-                                <input type="range" min="0" max="250" value="100" class="slider" id="slider-saturate" oninput="applyFilters()">
-                            </div>
-                            <div class="control-group">
-                                <label>Contraste : <span id="val-contrast" class="neon-text">100%</span></label>
-                                <input type="range" min="50" max="200" value="100" class="slider" id="slider-contrast" oninput="applyFilters()">
-                            </div>
-                            <div class="filter-presets">
-                                <button class="cyber-btn mini" onclick="setPreset('normal')">Normal</button>
-                                <button class="cyber-btn mini" onclick="setPreset('vision-noire')">Night Vision</button>
-                                <button class="cyber-btn mini" onclick="setPreset('retro')">YUV Retro</button>
-                                <button class="cyber-btn mini" onclick="setPreset('high-contrast')">Sécurité</button>
-                            </div>
+                        <div class="range-group">
+                            <div class="range-labels"><span>Luminosité</span><span id="val-bright" class="value-display">100%</span></div>
+                            <input type="range" min="30" max="250" value="100" class="pro-slider" id="slider-bright" oninput="applyFilters()">
+                        </div>
+                        
+                        <div class="range-group">
+                            <div class="range-labels"><span>Saturation</span><span id="val-saturate" class="value-display">100%</span></div>
+                            <input type="range" min="0" max="250" value="100" class="pro-slider" id="slider-saturate" oninput="applyFilters()">
                         </div>
 
-                        <div class="control-section ptz-box">
-                            <h3>🤖 NAVIGATION HORIZONTALE</h3>
+                        <div class="range-group">
+                            <div class="range-labels"><span>Contraste</span><span id="val-contrast" class="value-display">100%</span></div>
+                            <input type="range" min="50" max="200" value="100" class="pro-slider" id="slider-contrast" oninput="applyFilters()">
+                        </div>
+
+                        <div class="preset-grid">
+                            <button class="pro-btn btn-small" onclick="setPreset('normal')">Normal</button>
+                            <button class="pro-btn btn-small" onclick="setPreset('vision-noire')">Vision Nuit</button>
+                            <button class="pro-btn btn-small" onclick="setPreset('retro')">Contraste YUV</button>
+                            <button class="pro-btn btn-small" onclick="setPreset('high-contrast')">Surveillance</button>
+                        </div>
+
+                        <div class="ptz-section">
+                            <div class="section-title">Contrôle de l'axe</div>
                             <div class="ptz-row">
-                                <button class="cyber-btn ptz" onclick="moveH('left')">◀ GAUCHE</button>
-                                <button class="cyber-btn ptz home" onclick="moveH('home')">⌂ HOMING</button>
-                                <button class="cyber-btn ptz" onclick="moveH('right')">DROITE ▶</button>
+                                <button class="pro-btn" onclick="moveH('left')">◀ Gauche</button>
+                                <button class="pro-btn btn-center" onclick="moveH('home')">⌂ Homing</button>
+                                <button class="pro-btn" onclick="moveH('right')">Droite ▶</button>
                             </div>
                         </div>
                     </div>
@@ -90,17 +89,31 @@
             </div>
 
             <div id="tab-terminal" class="tab-content">
-                <div class="terminal-card">
-                    <div class="terminal-header">
-                        <span>donamestre@core-sys:~# interactive-shell</span>
-                        <button onclick="clearConsole()" class="cyber-btn mini">Effacer</button>
+                <div class="terminal-layout">
+                    <div class="pro-card console-main">
+                        <div class="panel-header">
+                            <span class="panel-title">Stdout System Log</span>
+                            <div class="header-actions">
+                                <button onclick="copyLogs()" class="pro-btn btn-small">📋 Copier les logs</button>
+                                <button onclick="clearConsole()" class="pro-btn btn-small">Effacer</button>
+                            </div>
+                        </div>
+                        <div class="terminal-box" id="console-output">
+                            <div class="log-row sys">[SYS] Initialisation de la console de contrôle.</div>
+                        </div>
+                        <div class="terminal-input-bar">
+                            <span class="prompt">></span>
+                            <input type="text" id="cmd-field" placeholder="Entrer une commande (ex: home, left, normal)..." onkeydown="handleConsoleInput(event)">
+                        </div>
                     </div>
-                    <div class="terminal-body" id="console-output">
-                        <div class="log-line sys">[SYSTEM] Shell prêt. Tapez "help" pour voir les commandes directes.</div>
-                    </div>
-                    <div class="terminal-input-row">
-                        <span class="prompt">>></span>
-                        <input type="text" id="cmd-field" placeholder="Entrez une commande brute (ex: left, right, home, quality=10, brightness=150)..." onkeydown="handleConsoleInput(event)">
+
+                    <div class="pro-card console-sidebar">
+                        <div class="sidebar-header">
+                            <div class="section-title" style="margin-bottom: 10px;">Dictionnaire de commandes</div>
+                            <input type="text" id="sidebar-search" class="pro-input search-input" placeholder="🔍 Rechercher une commande..." oninput="filterCommands()">
+                        </div>
+                        <div class="command-list" id="commands-container">
+                            </div>
                     </div>
                 </div>
             </div>
