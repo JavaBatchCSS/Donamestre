@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>S3-PRO PTZ AI Console</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <h1>S3-PRO <span style="font-weight:300;">PTZ CONSOLE</span></h1>
+        <div class="config-ip">
+            <input type="text" id="esp-ip" placeholder="Ex: 192.168.1.50" title="Adresse IP de l'ESP32">
+            <button onclick="saveIP()">🔌 Connexion</button>
+        </div>
+        <div id="status" class="status-badge disconnected">● DECONNECTÉ</div>
+    </header>
+    
+    <div class="dashboard">
+        <div class="card">
+            <div class="monitor-wrapper">
+                <div id="rec-badge">REC VIDEO</div>
+                <img id="livestream" src="" alt="En attente du flux vidéo..." crossorigin="anonymous">
+            </div>
+            <div class="action-bar">
+                <button class="btn btn-primary" onclick="capturePhoto()">📸 Capture Photo</button>
+                <button class="btn btn-danger" id="rec-btn" onclick="toggleRecording()">🔴 Enregistrer Flux</button>
+            </div>
+        </div>
+        <div class="card ptz-section">
+            <h3 style="margin:0; font-size:15px; color:#cbd5e1;">Navigation Optique Axis</h3>
+            <div class="dpad">
+                <div></div>
+                <button class="btn-joy" onclick="sendPTZ('up')">▲</button>
+                <div></div>
+                <button class="btn-joy" onclick="sendPTZ('left')">◀</button>
+                <button class="btn-joy btn-home" onclick="sendPTZ('home')">⌂</button>
+                <button class="btn-joy" onclick="sendPTZ('right')">▶</button>
+                <div></div>
+                <button class="btn-joy" onclick="sendPTZ('down')">▼</button>
+                <div></div>
+            </div>
+            <button class="btn-secondary" onclick="sendPTZ('home')">🔄 Réaligner & Centrer (Homing)</button>
+            
+            <div class="settings-track">
+                <div class="track-group">
+                    <div class="track-label"><span>Définition Flux (JPEG)</span><span id="val-quality" class="track-val">Optimale</span></div>
+                    <input type="range" class="slider" min="6" max="30" value="10" onchange="pushConfig('quality', this.value)">
+                </div>
+                <div class="track-group">
+                    <div class="track-label"><span>Filtre de Netteté</span><span id="val-sharpness" class="track-val">Normal</span></div>
+                    <input type="range" class="slider" min="-2" max="2" value="0" onchange="pushConfig('sharpness', this.value)">
+                </div>
+            </div>
+        </div>
+    </div>
+    <canvas id="hidden-canvas" style="display:none;"></canvas>
+    <script src="app.js"></script>
+</body>
+</html>
