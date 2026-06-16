@@ -10,17 +10,24 @@
     --accent-red: #ef4444;
 }
 
-body { background-color: var(--bg-app); color: var(--text-primary); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; padding: 24px; }
+body { 
+    background-color: var(--bg-app); 
+    color: var(--text-primary); 
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+    margin: 0; 
+    padding: 24px; 
+}
+
 .app-container { max-width: 1280px; margin: 0 auto; }
 
-/* HEADER */
+/* HEADER DESIGN SOBRE */
 header.pro-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 16px; margin-bottom: 24px; }
 .pro-logo { font-size: 24px; font-weight: 700; letter-spacing: 1px; margin: 0; display: flex; align-items: center; }
 .power-glyph { color: var(--accent-red); cursor: pointer; margin-left: 6px; font-size: 22px; transition: transform 0.3s; }
 .power-glyph.active { color: var(--accent-green); transform: rotate(90deg); }
 .sub-brand { font-size: 11px; color: var(--text-muted); font-weight: 600; margin-top: 2px; letter-spacing: 0.5px; }
 
-/* INPUTS ET BOUTONS */
+/* REGLAGES INPUTS / BOUTONS PRO */
 .connection-zone { display: flex; gap: 8px; }
 .pro-input { background-color: var(--bg-darker); border: 1px solid var(--border-color); color: #fff; padding: 8px 12px; border-radius: 6px; font-size: 13px; outline: none; transition: border 0.2s; }
 .pro-input:focus { border-color: var(--accent-blue); }
@@ -35,7 +42,7 @@ header.pro-header { display: flex; justify-content: space-between; align-items: 
 .btn-danger:hover { background-color: var(--accent-red); color: #fff; }
 .btn-small { padding: 4px 10px; font-size: 11px; border-radius: 4px; }
 
-/* NAVIGATION ONGLETS */
+/* INTERFACE NAVIGATION */
 .tabs-nav { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 1px solid var(--border-color); padding-bottom: 8px; }
 .tab-btn { background: transparent; border: none; color: var(--text-muted); padding: 8px 16px; font-size: 14px; font-weight: 500; cursor: pointer; border-radius: 4px; }
 .tab-btn:hover { color: var(--text-primary); background-color: rgba(255,255,255,0.02); }
@@ -44,16 +51,32 @@ header.pro-header { display: flex; justify-content: space-between; align-items: 
 .tab-content.active { display: block; }
 .badge { background: #334155; padding: 2px 6px; border-radius: 10px; font-size: 10px; margin-left: 6px; color: #fff; }
 
-/* STRUCTURE STUDIO */
+/* COMPOSANTS DE BASE */
 .pro-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px; padding: 18px; }
 .studio-grid { display: grid; grid-template-columns: 1.5fr 1fr; gap: 20px; }
 .section-title { font-size: 13px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 16px; }
 
-/* ZONE VIDEO */
-.video-viewport { position: relative; background: #000; aspect-ratio: 4/3; border-radius: 6px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+/* ZONE RENDU VIDEO AVEC MULTI-Z-INDEX COMPATIBLE */
+.video-viewport { 
+    position: relative; 
+    background: #000; 
+    aspect-ratio: 4/3; 
+    border-radius: 6px; 
+    display: flex; 
+    align-items: center; 
+    justify-content: center; 
+    overflow: hidden; 
+    width: 100%;
+}
 .canvas-container { position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
-#video-stream { max-width: 100%; max-height: 100%; object-fit: contain; }
-.canvas-container canvas { position: absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; }
+#video-stream { 
+    max-width: 100%; 
+    max-height: 100%; 
+    object-fit: contain; 
+    display: none; /* Piloté en JS à l'activation pour éviter les carrés blancs bruts */
+    z-index: 1; 
+}
+.canvas-container canvas { position: absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index: 2; }
 
 .status-badge { position: absolute; top: 12px; font-size: 10px; font-weight: 600; padding: 4px 8px; border-radius: 4px; }
 .status-badge.secure { left: 12px; background: rgba(16, 185, 129, 0.1); color: var(--accent-green); border: 1px solid rgba(16, 185, 129, 0.2); }
@@ -63,7 +86,7 @@ header.pro-header { display: flex; justify-content: space-between; align-items: 
 .action-bar { display: flex; gap: 8px; margin-top: 12px; }
 .action-bar .pro-btn { flex: 1; }
 
-/* REGLAGES SLIDERS */
+/* REGLAGES SLIDERS & PANELS */
 .toggle-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; }
 .label-text { font-size: 13px; font-weight: 500; }
 .pro-switch { position: relative; display: inline-block; width: 40px; height: 20px; }
@@ -84,7 +107,7 @@ input:checked + .switch-slider:before { transform: translateX(20px); }
 .ptz-row .pro-btn { flex: 1; padding: 12px; }
 .btn-center { background-color: rgba(59,130,246,0.05); border: 1px solid rgba(59,130,246,0.15); color: var(--accent-blue); }
 
-/* TERMINAL & PANNEAU LATERAL */
+/* STRUCTURE DISPOSITION TERMINAL + SIDEBAR */
 .terminal-layout { display: grid; grid-template-columns: 1fr 320px; gap: 20px; }
 .panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
 .panel-title { font-size: 13px; font-weight: 600; color: var(--text-muted); }
@@ -101,6 +124,7 @@ input:checked + .switch-slider:before { transform: translateX(20px); }
 .prompt { font-family: monospace; color: var(--accent-blue); font-weight: bold; margin-right: 10px; }
 .terminal-input-bar input { background: transparent; border: none; color: #fff; flex: 1; outline: none; font-family: monospace; font-size: 13px; }
 
+/* COMPOSANTS PANNEAU LATÉRAL DE COMMANDES */
 .command-list { height: 395px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
 .cmd-item { background: var(--bg-darker); border: 1px solid var(--border-color); padding: 10px; border-radius: 6px; cursor: pointer; transition: background 0.15s; text-align: left; }
 .cmd-item:hover { background: rgba(59, 130, 246, 0.05); border-color: rgba(59, 130, 246, 0.3); }
