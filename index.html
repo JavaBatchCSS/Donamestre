@@ -3,54 +3,97 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Donamestre PTZ Console</title>
+    <title>Donamestre Premium HQ</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <header>
-        <div class="brand-container">
-            <h1 class="logo">D<button id="power-trigger" class="power-btn" onclick="toggleSystemPower()" title="Mise sous tension">⏻</button>namestre</h1>
-            <span class="sub-logo">PTZ AXIS-H CONTROL</span>
-        </div>
-        <div class="config-ip">
-            <input type="text" id="esp-ip" placeholder="IP de l'ESP32 (Ex: 192.168.1.50)">
-            <button onclick="saveIP()">🔌 Connexion</button>
-        </div>
-        <div id="status" class="status-badge disconnected">● SYSTEM SYSTEM OFF</div>
-    </header>
-    
-    <div class="dashboard">
-        <div class="card">
-            <div class="monitor-wrapper">
-                <div id="rec-badge">REC VIDEO</div>
-                <img id="livestream" src="" alt="Système hors tension. Cliquez sur le ⏻ pour démarrer." crossorigin="anonymous">
+    <div class="app-container">
+        <header>
+            <div class="brand-zone">
+                <h1 class="glow-logo">D<span class="power-glyph" id="power-main" onclick="toggleSystem()">⏻</span>NAMESTRE</h1>
+                <div class="sub-brand">CORE SYSTEM v2.0 // AXIS-H OPTIMIZED</div>
             </div>
-            <div class="action-bar">
-                <button class="btn btn-primary" onclick="capturePhoto()">📸 Capture Photo</button>
-                <button class="btn btn-danger" id="rec-btn" onclick="toggleRecording()">🔴 Enregistrer Flux</button>
+            <div class="connexion-zone">
+                <input type="text" id="esp-ip" placeholder="Adresse IP de la caméra">
+                <button onclick="connectSystem()" class="glow-button">LIAISON</button>
             </div>
+        </header>
+
+        <div class="tabs-nav">
+            <button class="tab-btn active" onclick="switchTab('studio')">🎬 STUDIO LIVE</button>
+            <button class="tab-btn" onclick="switchTab('terminal')">📟 CONSOLE SYSTÈME <span id="log-count">0</span></button>
         </div>
-        <div class="card ptz-section">
-            <h3 style="margin:0; font-size:15px; color:#cbd5e1; text-transform: uppercase; letter-spacing: 1px;">Navigation Horizontale</h3>
-            <div class="dpad-horizontal">
-                <button class="btn-joy" onclick="sendPTZ('left')">◀ GAUCHE</button>
-                <button class="btn-joy btn-home" onclick="sendPTZ('home')">⌂ CENTER</button>
-                <button class="btn-joy" onclick="sendPTZ('right')">DROITE ▶</button>
-            </div>
-            
-            <div class="settings-track">
-                <div class="track-group">
-                    <div class="track-label"><span>Définition Flux (JPEG)</span><span id="val-quality" class="track-val">Optimale</span></div>
-                    <input type="range" class="slider" min="6" max="30" value="10" onchange="pushConfig('quality', this.value)">
+
+        <main class="main-content">
+            <div id="tab-studio" class="tab-content active">
+                <div class="studio-grid">
+                    <div class="video-card">
+                        <div class="video-viewport">
+                            <div class="secure-badge">🔒 FLUX PRIVÉ LOCAL</div>
+                            <div class="canvas-container">
+                                <img id="video-stream" src="" alt="Système en attente de liaison active...">
+                            </div>
+                        </div>
+                        <div class="quick-actions">
+                            <button class="action-btn" onclick="rotateVideo()">🔄 Rotation 90°</button>
+                            <button class="action-btn snapshot" onclick="takeSnapshot()">📸 Capture HD</button>
+                        </div>
+                    </div>
+
+                    <div class="controls-card">
+                        <h3>🎨 TRAITEMENT NUMÉRIQUE (POST-CHIP)</h3>
+                        <p class="privacy-notice">Le traitement s'effectue dans votre navigateur. Aucune image ne transite sur Internet.</p>
+                        
+                        <div class="control-group">
+                            <label>Luminosité : <span id="val-bright">100%</span></label>
+                            <input type="range" min="30" max="250" value="100" class="slider" id="slider-bright" oninput="applyFilters()">
+                        </div>
+                        
+                        <div class="control-group">
+                            <label>Saturation : <span id="val-saturate">100%</span></label>
+                            <input type="range" min="0" max="250" value="100" class="slider" id="slider-saturate" oninput="applyFilters()">
+                        </div>
+
+                        <div class="control-group">
+                            <label>Contraste : <span id="val-contrast">100%</span></label>
+                            <input type="range" min="50" max="200" value="100" class="slider" id="slider-contrast" oninput="applyFilters()">
+                        </div>
+
+                        <div class="control-group">
+                            <label>Filtres prédéfinis :</label>
+                            <div class="filter-presets">
+                                <button onclick="setPreset('normal')">Normal</button>
+                                <button onclick="setPreset('vision-noire')">Vision Nuit</button>
+                                <button onclick="setPreset('retro')">Séparateur</button>
+                                <button onclick="setPreset('high-contrast')">Sécurité</button>
+                            </div>
+                        </div>
+
+                        <div class="ptz-box">
+                            <h3>🤖 NAVIGATION HORIZONTALE</h3>
+                            <div class="ptz-row">
+                                <button class="ptz-btn" onclick="moveH('left')">◀ GAUCHE</button>
+                                <button class="ptz-btn home" onclick="moveH('home')">RECALE (HOMING)</button>
+                                <button class="ptz-btn" onclick="moveH('right')">DROITE ▶</button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-                <div class="track-group">
-                    <div class="track-label"><span>Filtre de Netteté</span><span id="val-sharpness" class="track-val">Normal</span></div>
-                    <input type="range" class="slider" min="-2" max="2" value="0" onchange="pushConfig('sharpness', this.value)">
+            </div>
+
+            <div id="tab-terminal" class="tab-content">
+                <div class="terminal-card">
+                    <div class="terminal-header">
+                        <span>donamestre@esp32s3:~# stdout-log</span>
+                        <button onclick="clearConsole()" class="clear-btn">Effacer</button>
+                    </div>
+                    <div class="terminal-body" id="console-output">
+                        <div class="log-line sys">[SYSTEM] Console de bord initialisée. Prêt pour la liaison locale.</div>
+                    </div>
                 </div>
             </div>
-        </div>
+        </main>
     </div>
-    <canvas id="hidden-canvas" style="display:none;"></canvas>
     <script src="app.js"></script>
 </body>
 </html>
