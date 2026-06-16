@@ -73,7 +73,8 @@ header.pro-header { display: flex; justify-content: space-between; align-items: 
     max-width: 100%; 
     max-height: 100%; 
     object-fit: contain; 
-    display: none; /* Piloté en JS à l'activation pour éviter les carrés blancs bruts */
+    opacity: 0; /* Au lieu de display: none, on la rend juste transparente */
+    transition: opacity 0.3s ease;
     z-index: 1; 
 }
 .canvas-container canvas { position: absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index: 2; }
