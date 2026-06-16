@@ -111,7 +111,7 @@ function handleConsoleInput(e) {
     }
 }
 
-// CONNEXION RESEAU LOCAL SANS DISCRIMINATION DE SÉCURITÉ
+// CORRECTION : Connexion simplifiée sans interférence avec l'état du flux vidéo
 function connectSystem() {
     const input = document.getElementById('esp-ip').value.trim();
     if (!input) return alert("Spécifiez une IP valide.");
@@ -120,32 +120,38 @@ function connectSystem() {
     localStorage.setItem('donamestre_ip', espIp);
     appendLog(`Vérification de l'hôte distant sur http://${espIp}...`, 'sys');
     
+    // On teste si la carte répond au ping
     fetch(`http://${espIp}/control?cmd=ping`, { mode: 'cors' })
         .then(r => r.text())
         .then(res => {
             if (res.includes("PONG")) {
-                appendLog("Poignée de main matérielle réussie.", "success");
-                if (!isSystemOn) toggleSystem();
+                appendLog("Poignée de main matérielle réussie. Liaison OK.", "success");
             }
         })
-        .catch(() => appendLog("Échec réseau : l'appareil est injoignable ou hors-ligne.", "err"));
+        .catch(() => appendLog("Note : L'hôte n'a pas répondu au ping (Vérifiez l'IP ou l'alimentation).", "err"));
 }
 
-// TOGGLE GLOBAL : LANCEUR DU FLUX INTEGRAL SANS CACHE AGRESSIF
+// CORRECTION : Allumage forcé et direct du flux vidéo (0 condition bloquante)
 function toggleSystem() {
-    if (!espIp) return;
+    if (!espIp) {
+        alert("Veuillez d'abord saisir l'adresse IP de l'ESP32.");
+        return;
+    }
     const glyph = document.getElementById('power-main');
     const img = document.getElementById('video-stream');
     isSystemOn = !isSystemOn;
     
     if (isSystemOn) {
         glyph.classList.add('active');
+        
+        // Suppression radicale de tout verrou de sécurité navigateur
         img.removeAttribute('crossorigin'); 
         
-        // On injecte le flux
+        // Injection de l'adresse brute du flux vidéo
         img.src = `http://${espIp}/stream?cb=${Date.now()}`;
         
-        // CORRECTIF : On la rend visible via l'opacité, l'image est déjà dans le DOM
+        // Forçage de l'affichage physique dans le DOM
+        img.style.display = "block";
         img.style.opacity = "1";
         img.style.width = "100%";
         img.style.height = "100%";
@@ -154,7 +160,8 @@ function toggleSystem() {
     } else {
         glyph.classList.remove('active');
         img.src = ''; 
-        img.style.opacity = "0"; // On la remet transparente
+        img.style.display = "none";
+        img.style.opacity = "0";
         if (faceDetectionInterval) clearInterval(faceDetectionInterval);
         document.getElementById('toggle-face').checked = false;
         const c = document.getElementById('ai-overlay'); if (c) c.remove();
