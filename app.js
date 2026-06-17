@@ -181,7 +181,8 @@ function toggleSystem() {
     if (isSystemOn) {
         if(glyph) glyph.classList.add('active');
         
-        // --- LA LIGNE CORRECTRICE CRITIQUE POUR LA CAPTURE ET LE FILM ---
+        // CORRECTIONS CRITIQUES ANTI-TAINTED CANVAS (CORS)
+        img.setAttribute('crossorigin', 'anonymous');
         img.crossOrigin = "anonymous"; 
         
         img.src = `http://${espIp}/stream?cb=${Date.now()}`;
