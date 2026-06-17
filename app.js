@@ -1,7 +1,14 @@
 let currentRotation = parseInt(localStorage.getItem('donamestre_rotation')) || 0;
 let isSystemOn = false;
-let espIp = localStorage.getItem('donamestre_ip') || '';
-let logCount = 0;
+// Détection automatique : si le script tourne sur l'ESP32, il prend son IP courante
+let espIp = window.location.hostname;
+
+// Si on teste encore sur un fichier local sur PC, on se rabat sur le localStorage
+if (!espIp || espIp === "localhost" || espIp.includes("github.io")) {
+    espIp = localStorage.getItem('donamestre_ip') || '';
+}
+
+// ... le reste de votre configuration reste identique
 let isAiReady = false;
 let faceDetectionInterval = null;
 
