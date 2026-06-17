@@ -1,12 +1,10 @@
 // VARIABLES GLOBALES ET INITIALISATION DES PARAMÈTRES
 let currentRotation = parseInt(localStorage.getItem('donamestre_rotation')) || 0;
 let isSystemOn = false;
-let logCount = 0; // CORRECTIF CRITIQUE : Initialisation globale de la variable manquante
+let logCount = 0;
 
-// Détection automatique : si le script tourne sur l'ESP32, il prend son IP courante
+// Détection automatique de l'IP de la carte
 let espIp = window.location.hostname;
-
-// Si on teste encore sur un fichier local sur PC, on se rabat sur le localStorage
 if (!espIp || espIp === "localhost" || espIp.includes("github.io")) {
     espIp = localStorage.getItem('donamestre_ip') || '';
 }
@@ -23,7 +21,7 @@ let mediaRecorder;
 let recordedChunks = [];
 let isRecording = false;
 
-// ALGORITHME DE REPIXELISATION (Filtre Kernel Sharpening)
+// ALGORITHME DE REPIXELISATION
 let useUpscaling = localStorage.getItem('donamestre_upscale') === 'true';
 
 // BASE DE DONNÉES DU DICTIONNAIRE LATÉRAL
@@ -42,24 +40,125 @@ const COMMANDS_DATABASE = [
     { syntax: "clear", desc: "Efface l'intégralité de l'historique de la console." }
 ];
 
-// INITIALISATION AUTOMATIQUE AU CHARGEMENT
+// GENERATION DYNAMIQUE ABSOLUTE AU CHARGEMENT (Soulage l'ESP32)
 window.addEventListener('DOMContentLoaded', async () => {
+    const root = document.getElementById('app-root');
+    if (!root) return;
+
+    // Injection de toute la structure HTML d'origine
+    root.innerHTML = `
+        <div class='app-container'>
+            <header class='main-header'>
+                <div class='logo-area'>
+                    <h1>D<span>O</span>NAMESTRE</h1>
+                    <p class='subtitle'>AXIS-H MONITORING INTERFACE</p>
+                </div>
+                <div class='connection-panel'>
+                    <input type='text' id='esp-ip' class='ip-input' placeholder='Ex: 192.168.1.20' />
+                    <button id='power-main' class='connect-btn' onclick='connectSystem()'>Lier l'appareil</button>
+                </div>
+            </header>
+
+            <nav class='tab-navigation'>
+                <button id='btn-tab-live' class='tab-btn active' onclick="switchTab('live')">🎬 Studio Live</button>
+                <button id='btn-tab-console' class='tab-btn' onclick="switchTab('console')">📟 Console & Commandes <span id='log-count' class='badge'>0</span></button>
+            </nav>
+
+            <main class='interface-body'>
+                <div id='tab-live' class='tab-content active'>
+                    <div class='studio-grid'>
+                        <div class='video-card'>
+                            <div class='card-header'>
+                                <span class='status-indicator'>Réseau Local Sécurisé</span>
+                                <span id='ai-status' class='status-badge'>IA Inactive</span>
+                            </div>
+                            <div class='video-view' id='canvas-wrapper'>
+                                <img id='video-stream' src='' alt='Aucun flux vidéo actif. Connectez l\`ESP32.' />
+                            </div>
+                            <div class='video-actions'>
+                                <button class='pro-btn' onclick='rotateVideo()'>🔄 Rotation 90°</button>
+                                <button class='pro-btn' onclick='takeSnapshot()'>📸 Capture HD</button>
+                                <button id='rec-btn' class='pro-btn btn-danger' onclick='toggleRecording()'>🔴 Enregistrer</button>
+                            </div>
+                        </div>
+
+                        <div class='control-card'>
+                            <section class='control-section'>
+                                <h3>TRAITEMENT D'IMAGE (LOCAL)</h3>
+                                <div class='toggle-row'>
+                                    <label for='toggle-face'>Détection faciale active</label>
+                                    <input type='checkbox' id='toggle-face' onchange='toggleFaceDetection()' class='switch-input' />
+                                </div>
+                                <div class='slider-group'>
+                                    <div class='slider-header'><span>Luminosité</span><span id='val-bright'>100%</span></div>
+                                    <input type='range' id='slider-bright' min='0' max='200' value='100' oninput='applyFilters()' />
+                                </div>
+                                <div class='slider-group'>
+                                    <div class='slider-header'><span>Saturation</span><span id='val-saturate'>100%</span></div>
+                                    <input type='range' id='slider-saturate' min='0' max='200' value='100' oninput='applyFilters()' />
+                                </div>
+                                <div class='slider-group'>
+                                    <div class='slider-header'><span>Contraste</span><span id='val-contrast'>100%</span></div>
+                                    <input type='range' id='slider-contrast' min='0' max='200' value='100' oninput='applyFilters()' />
+                                </div>
+                                <div class='preset-grid'>
+                                    <button onclick="setPreset('normal')">Normal</button>
+                                    <button onclick="setPreset('vision-noire')">Vision Nuit</button>
+                                    <button onclick="setPreset('high-contrast')">Surveillance</button>
+                                    <button onclick="executeDirectCommand('status')">État Matériel</button>
+                                </div>
+                            </section>
+
+                            <section class='control-section'>
+                                <h3>CONTRÔLE DE L'AXE</h3>
+                                <div class='axis-grid'>
+                                    <button class='axis-btn' onclick="moveH('left')">◀ Gauche</button>
+                                    <button class='axis-btn homing' onclick="moveH('home')">🏠 Homing</button>
+                                    <button class='axis-btn' onclick="moveH('right')">Droite ▶</button>
+                                </div>
+                            </section>
+                        </div>
+                    </div>
+                </div>
+
+                <div id='tab-console' class='tab-content'>
+                    <div class='console-grid'>
+                        <div class='console-card'>
+                            <div class='console-header'>
+                                <h3>CONSOLE LOGS</h3>
+                                <div class='console-actions'>
+                                    <button onclick='copyLogs()'>📋 Copier</button>
+                                    <button onclick='clearConsole()'>🗑️ Effacer</button>
+                                </div>
+                            </div>
+                            <div id='console-output' class='console-terminal'></div>
+                            <div class='console-input-wrapper'>
+                                <input type='text' id='cmd-field' placeholder='Saisir une syntaxe commande...' onkeydown='handleConsoleInput(event)' />
+                            </div>
+                        </div>
+
+                        <div class='dictionary-card'>
+                            <div class='dictionary-header'>
+                                <h3>DICTIONNAIRE LOCAL</h3>
+                                <input type='text' id='sidebar-search' placeholder='Filtrer les commandes...' oninput='filterCommands()' />
+                            </div>
+                            <div id='commands-container' class='dictionary-list'></div>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    `;
+
+    // Configuration du champ IP
     const ipField = document.getElementById('esp-ip');
-    if (ipField && espIp) {
-        ipField.value = espIp;
-    }
+    if (ipField && espIp) ipField.value = espIp;
     
-    // Connexion automatique immédiate si l'IP est connue
-    if (espIp) {
-        connectSystem();
-    }
-    
-    // Restauration des configurations sauvegardées dans le LocalStorage
+    // Lancement des fonctions d'initialisation applicatives
+    if (espIp) connectSystem();
     restoreSavedConfig();
     buildSidebarCommands();
     initAiEngine();
-    
-    // Boucle de traitement pour la repixelisation (si activée)
     startProcessingLoop();
 });
 
@@ -74,9 +173,7 @@ function restoreSavedConfig() {
     if(document.getElementById('slider-contrast')) document.getElementById('slider-contrast').value = c;
     
     const wrapper = document.getElementById('canvas-wrapper');
-    if (wrapper) {
-        wrapper.style.transform = `rotate(${currentRotation}deg)`;
-    }
+    if (wrapper) wrapper.style.transform = `rotate(${currentRotation}deg)`;
     applyFilters();
 }
 
@@ -93,7 +190,7 @@ function saveConfigToLocalStorage() {
     localStorage.setItem('donamestre_upscale', useUpscaling);
 }
 
-// LOGS SYSTEME ET COPIE PRESSE-PAPIER
+// LOGS SYSTEME
 function appendLog(message, type = 'sys') {
     const consoleBody = document.getElementById('console-output');
     if (!consoleBody) return;
@@ -130,8 +227,9 @@ function switchTab(tabId) {
     document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
     
     const targetTab = document.getElementById(`tab-${tabId}`);
+    const targetBtn = document.getElementById(`btn-tab-${tabId}`);
     if (targetTab) targetTab.classList.add('active');
-    if (event && event.currentTarget) event.currentTarget.classList.add('active');
+    if (targetBtn) targetBtn.classList.add('active');
 }
 
 // FILTRE ET RECHERCHE DU PANNEAU LATÉRAL
@@ -214,11 +312,8 @@ function toggleSystem() {
     
     if (isSystemOn) {
         if(glyph) glyph.classList.add('active');
-        
-        // SECURISATION DES PIXELS DU CANVAS CONTRE LES BLOCAGES "TAINTED"
         img.setAttribute('crossorigin', 'anonymous');
         img.crossOrigin = "anonymous"; 
-        
         img.src = `http://${espIp}/stream?cb=${Date.now()}`;
         img.style.display = "block";
         img.style.opacity = "1";
@@ -235,7 +330,7 @@ function toggleSystem() {
     }
 }
 
-// LOGICIEL DE REPIXELISATION PAR CONVOLUTION
+// REPIXELISATION PAR CONVOLUTION
 function startProcessingLoop() {
     const img = document.getElementById('video-stream');
     if (!img) return;
@@ -292,7 +387,7 @@ function startProcessingLoop() {
     requestAnimationFrame(processFrame);
 }
 
-// RECONNAISSANCE FACIALE ET COMPATIBILITÉ CANVAS LAYER
+// RECONNAISSANCE FACIALE
 async function initAiEngine() {
     try {
         await faceapi.nets.tinyFaceDetector.loadFromUri('https://vladmandic.github.io/face-api/model/');
@@ -347,7 +442,7 @@ function toggleFaceDetection() {
     }
 }
 
-// ENREGISTREMENT ET CAPTURES DE FLUX
+// ENREGISTREMENT ET CAPTURES
 function toggleRecording() {
     const btn = document.getElementById('rec-btn');
     const img = document.getElementById('video-stream');
@@ -404,6 +499,7 @@ function moveH(dir) {
         .catch(() => appendLog(`Perte de liaison PTZ.`, "err"));
 }
 
+// CONTROLES FILTRES ET EFFETS
 function sendRawControl(cmd, val) { 
     if (!espIp) return;
     fetch(`http://${espIp}/control?cmd=${cmd}&val=${val}`, { mode: 'cors' }); 
@@ -413,17 +509,13 @@ function applyFilters() {
     const bSlider = document.getElementById('slider-bright');
     const sSlider = document.getElementById('slider-saturate');
     const cSlider = document.getElementById('slider-contrast');
-    
     if (!bSlider || !sSlider || !cSlider) return;
     
-    const b = bSlider.value;
-    const s = sSlider.value;
-    const c = cSlider.value;
+    const b = bSlider.value; const s = sSlider.value; const c = cSlider.value;
     
     const bVal = document.getElementById('val-bright');
     const sVal = document.getElementById('val-saturate');
     const cVal = document.getElementById('val-contrast');
-    
     if (bVal) bVal.innerText = b + '%';
     if (sVal) sVal.innerText = s + '%';
     if (cVal) cVal.innerText = c + '%';
@@ -440,7 +532,6 @@ function setPreset(p) {
     const s = document.getElementById('slider-saturate');
     const c = document.getElementById('slider-contrast');
     const img = document.getElementById('video-stream');
-    
     if (!b || !s || !c || !img) return;
     
     if(p==='normal'){ b.value=100; s.value=100; c.value=100; img.style.filter=''; }
