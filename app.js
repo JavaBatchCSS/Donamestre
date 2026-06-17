@@ -1,5 +1,8 @@
+// VARIABLES GLOBALES ET INITIALISATION DES PARAMÈTRES
 let currentRotation = parseInt(localStorage.getItem('donamestre_rotation')) || 0;
 let isSystemOn = false;
+let logCount = 0; // CORRECTIF CRITIQUE : Initialisation globale de la variable manquante
+
 // Détection automatique : si le script tourne sur l'ESP32, il prend son IP courante
 let espIp = window.location.hostname;
 
@@ -8,7 +11,6 @@ if (!espIp || espIp === "localhost" || espIp.includes("github.io")) {
     espIp = localStorage.getItem('donamestre_ip') || '';
 }
 
-// ... le reste de votre configuration reste identique
 let isAiReady = false;
 let faceDetectionInterval = null;
 
@@ -40,11 +42,15 @@ const COMMANDS_DATABASE = [
     { syntax: "clear", desc: "Efface l'intégralité de l'historique de la console." }
 ];
 
-// INITIALISATION AUTOMATIQUE AU CHARGEMENT (Mise à jour demandée)
+// INITIALISATION AUTOMATIQUE AU CHARGEMENT
 window.addEventListener('DOMContentLoaded', async () => {
+    const ipField = document.getElementById('esp-ip');
+    if (ipField && espIp) {
+        ipField.value = espIp;
+    }
+    
+    // Connexion automatique immédiate si l'IP est connue
     if (espIp) {
-        document.getElementById('esp-ip').value = espIp;
-        // Connexion automatique immédiate
         connectSystem();
     }
     
@@ -67,14 +73,22 @@ function restoreSavedConfig() {
     if(document.getElementById('slider-saturate')) document.getElementById('slider-saturate').value = s;
     if(document.getElementById('slider-contrast')) document.getElementById('slider-contrast').value = c;
     
-    document.getElementById('canvas-wrapper').style.transform = `rotate(${currentRotation}deg)`;
+    const wrapper = document.getElementById('canvas-wrapper');
+    if (wrapper) {
+        wrapper.style.transform = `rotate(${currentRotation}deg)`;
+    }
     applyFilters();
 }
 
 function saveConfigToLocalStorage() {
-    localStorage.setItem('donamestre_bright', document.getElementById('slider-bright').value);
-    localStorage.setItem('donamestre_saturate', document.getElementById('slider-saturate').value);
-    localStorage.setItem('donamestre_contrast', document.getElementById('slider-contrast').value);
+    const bSlider = document.getElementById('slider-bright');
+    const sSlider = document.getElementById('slider-saturate');
+    const cSlider = document.getElementById('slider-contrast');
+
+    if (bSlider) localStorage.setItem('donamestre_bright', bSlider.value);
+    if (sSlider) localStorage.setItem('donamestre_saturate', sSlider.value);
+    if (cSlider) localStorage.setItem('donamestre_contrast', cSlider.value);
+    
     localStorage.setItem('donamestre_rotation', currentRotation);
     localStorage.setItem('donamestre_upscale', useUpscaling);
 }
@@ -88,8 +102,10 @@ function appendLog(message, type = 'sys') {
     row.innerText = `[${new Date().toLocaleTimeString()}] ${message}`;
     consoleBody.appendChild(row);
     consoleBody.scrollTop = consoleBody.scrollHeight;
+    
     logCount++;
-    document.getElementById('log-count').innerText = logCount;
+    const countBadge = document.getElementById('log-count');
+    if (countBadge) countBadge.innerText = logCount;
 }
 
 function copyLogs() {
@@ -101,24 +117,27 @@ function copyLogs() {
 }
 
 function clearConsole() {
-    document.getElementById('console-output').innerHTML = '';
+    const consoleBody = document.getElementById('console-output');
+    if (consoleBody) consoleBody.innerHTML = '';
     logCount = 0;
-    document.getElementById('log-count').innerText = "0";
+    const countBadge = document.getElementById('log-count');
+    if (countBadge) countBadge.innerText = "0";
 }
 
 // CHANGEMENT D'ONGLET
 function switchTab(tabId) {
     document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
     document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
-    document.getElementById(`tab-${tabId}`).classList.add('active');
-    event.currentTarget.classList.add('active');
+    
+    const targetTab = document.getElementById(`tab-${tabId}`);
+    if (targetTab) targetTab.classList.add('active');
+    if (event && event.currentTarget) event.currentTarget.classList.add('active');
 }
 
 // FILTRE ET RECHERCHE DU PANNEAU LATÉRAL
-// CORRECTION SYNTAXE : Remplacement du void function par une déclaration standard
 function buildSidebarCommands() {
     const container = document.getElementById('commands-container');
-    if (!container) return; // Sécurité si l'élément n'existe pas dans le DOM
+    if (!container) return; 
     container.innerHTML = '';
     COMMANDS_DATABASE.forEach(cmd => {
         const item = document.createElement('button');
@@ -131,7 +150,9 @@ function buildSidebarCommands() {
 }
 
 function filterCommands() {
-    const query = document.getElementById('sidebar-search').value.toLowerCase().trim();
+    const searchField = document.getElementById('sidebar-search');
+    if (!searchField) return;
+    const query = searchField.value.toLowerCase().trim();
     document.querySelectorAll('.cmd-item').forEach(item => {
         const syntax = item.getAttribute('data-syntax');
         item.style.display = syntax.includes(query) ? 'block' : 'none';
@@ -153,6 +174,7 @@ function executeDirectCommand(syntax) {
 function handleConsoleInput(e) {
     if (e.key === 'Enter') {
         const input = document.getElementById('cmd-field');
+        if (!input) return;
         const cmd = input.value.trim().toLowerCase();
         if (!cmd) return;
         executeDirectCommand(cmd);
@@ -161,7 +183,11 @@ function handleConsoleInput(e) {
 }
 
 function connectSystem() {
-    const input = document.getElementById('esp-ip').value.trim();
+    let input = espIp;
+    const ipField = document.getElementById('esp-ip');
+    if (ipField && ipField.value.trim()) {
+        input = ipField.value.trim();
+    }
     if (!input) return;
     
     espIp = input.replace(/^https?:\/\//, '').replace(/\/$/, '');
@@ -173,7 +199,7 @@ function connectSystem() {
         .then(res => {
             if (res.includes("PONG")) {
                 appendLog("Poignée de main matérielle réussie. Liaison OK.", "success");
-                if(!isSystemOn) toggleSystem(); // Déclenche le flux de manière transparente
+                if(!isSystemOn) toggleSystem(); 
             }
         })
         .catch(() => appendLog("L'appareil n'est pas encore synchronisé (En attente du flux).", "err"));
@@ -183,12 +209,13 @@ function toggleSystem() {
     if (!espIp) return;
     const glyph = document.getElementById('power-main');
     const img = document.getElementById('video-stream');
+    if (!img) return;
     isSystemOn = !isSystemOn;
     
     if (isSystemOn) {
         if(glyph) glyph.classList.add('active');
         
-        // CORRECTIONS CRITIQUES ANTI-TAINTED CANVAS (CORS)
+        // SECURISATION DES PIXELS DU CANVAS CONTRE LES BLOCAGES "TAINTED"
         img.setAttribute('crossorigin', 'anonymous');
         img.crossOrigin = "anonymous"; 
         
@@ -201,14 +228,17 @@ function toggleSystem() {
         img.src = ''; 
         img.style.display = "none";
         if (faceDetectionInterval) clearInterval(faceDetectionInterval);
-        document.getElementById('toggle-face').checked = false;
+        const faceCheck = document.getElementById('toggle-face');
+        if (faceCheck) faceCheck.checked = false;
         const c = document.getElementById('ai-overlay'); if (c) c.remove();
         appendLog("Flux coupé.", "sys");
     }
 }
-// LOGICIEL DE REPIXELISATION PAR CONVOLUTION (Filtre de convolution 3x3)
+
+// LOGICIEL DE REPIXELISATION PAR CONVOLUTION
 function startProcessingLoop() {
     const img = document.getElementById('video-stream');
+    if (!img) return;
     const procCanvas = document.createElement('canvas');
     const procCtx = procCanvas.getContext('2d');
     
@@ -220,7 +250,7 @@ function startProcessingLoop() {
                 procCanvas.style.width = "100%";
                 procCanvas.style.height = "100%";
                 procCanvas.id = "processed-canvas";
-                img.style.display = "none"; // On cache le flux brut
+                img.style.display = "none"; 
                 if(!document.getElementById('processed-canvas')) {
                     img.parentNode.insertBefore(procCanvas, img);
                 }
@@ -229,15 +259,14 @@ function startProcessingLoop() {
             procCtx.drawImage(img, 0, 0);
             const weights = [  0, -1,  0, 
                               -1,  5, -1, 
-                               0, -1,  0 ]; // Noyau d'accentuation de netteté (Sharpen matrix)
+                               0, -1,  0 ]; 
             
             let src = procCtx.getImageData(0, 0, procCanvas.width, procCanvas.height);
             let dst = procCtx.createImageData(src.width, src.height);
             
-            // Algorithme d'accentuation de texture
             for (let y = 1; y < src.height - 1; y++) {
                 for (let x = 1; x < src.width - 1; x++) {
-                    for (let c = 0; c < 3; c++) { // Canaux R, G, B
+                    for (let c = 0; c < 3; c++) { 
                         let i = (y * src.width + x) * 4 + c;
                         let sum = 0;
                         for (let ky = -1; ky <= 1; ky++) {
@@ -249,15 +278,14 @@ function startProcessingLoop() {
                         }
                         dst.data[i] = Math.min(Math.max(sum, 0), 255);
                     }
-                    dst.data[(y * src.width + x) * 4 + 3] = 255; // Alpha
+                    dst.data[(y * src.width + x) * 4 + 3] = 255; 
                 }
             }
             procCtx.putImageData(dst, 0, 0);
         } else {
-            // Si désactivé, on s'assure de réafficher l'image brute
             const pc = document.getElementById('processed-canvas');
             if(pc) pc.remove();
-            img.style.display = "block";
+            img.style.display = isSystemOn ? "block" : "none";
         }
         requestAnimationFrame(processFrame);
     }
@@ -278,36 +306,40 @@ async function initAiEngine() {
 }
 
 function toggleFaceDetection() {
-    const check = document.getElementById('toggle-face').checked;
-    if (!isSystemOn) { document.getElementById('toggle-face').checked = false; return; }
+    const faceCheck = document.getElementById('toggle-face');
+    if (!faceCheck) return;
+    const check = faceCheck.checked;
+    if (!isSystemOn) { faceCheck.checked = false; return; }
     
     if (check && isAiReady) {
         const img = document.getElementById('video-stream');
         let canvas = document.getElementById('ai-overlay');
-        if (!canvas) {
+        if (!canvas && img) {
             canvas = faceapi.createCanvasFromMedia(img);
             canvas.id = 'ai-overlay';
-            document.getElementById('canvas-wrapper').appendChild(canvas);
+            const wrapper = document.getElementById('canvas-wrapper');
+            if (wrapper) wrapper.appendChild(canvas);
         }
         
         faceDetectionInterval = setInterval(async () => {
-            if (!isSystemOn) return;
+            if (!isSystemOn || !img) return;
             const size = { width: img.clientWidth, height: img.clientHeight };
             faceapi.matchDimensions(canvas, size);
             
             const detections = await faceapi.detectAllFaces(img, new faceapi.TinyFaceDetectorOptions({ inputSize: 160, scoreThreshold: 0.4 }));
             const resized = faceapi.resizeResults(detections, size);
             
-            canvas.getContext('2d').clearRect(0,0, canvas.width, canvas.height);
-            resized.forEach(d => {
-                new faceapi.draw.DrawBox(d.box, { boxColor: '#3b82f6', lineWidth: 2 }).draw(canvas);
-                
-                // IA PTZ: Asservissement automatique des moteurs selon la position du visage
-                const faceCenterX = d.box.x + (d.box.width / 2);
-                const frameCenterX = size.width / 2;
-                if (faceCenterX < frameCenterX - 40) moveH('left');
-                else if (faceCenterX > frameCenterX + 40) moveH('right');
-            });
+            if (canvas) {
+                canvas.getContext('2d').clearRect(0,0, canvas.width, canvas.height);
+                resized.forEach(d => {
+                    new faceapi.draw.DrawBox(d.box, { boxColor: '#3b82f6', lineWidth: 2 }).draw(canvas);
+                    
+                    const faceCenterX = d.box.x + (d.box.width / 2);
+                    const frameCenterX = size.width / 2;
+                    if (faceCenterX < frameCenterX - 40) moveH('left');
+                    else if (faceCenterX > frameCenterX + 40) moveH('right');
+                });
+            }
         }, 150);
     } else {
         if (faceDetectionInterval) clearInterval(faceDetectionInterval);
@@ -319,13 +351,15 @@ function toggleFaceDetection() {
 function toggleRecording() {
     const btn = document.getElementById('rec-btn');
     const img = document.getElementById('video-stream');
-    if (!isSystemOn || !img.naturalWidth) return alert("Aucun flux actif.");
+    if (!isSystemOn || !img || !img.naturalWidth) return alert("Aucun flux actif.");
     
     if (isRecording) {
         mediaRecorder.stop();
         isRecording = false;
-        btn.innerText = "🔴 Enregistrer";
-        btn.className = "pro-btn btn-danger";
+        if (btn) {
+            btn.innerText = "🔴 Enregistrer";
+            btn.className = "pro-btn btn-danger";
+        }
     } else {
         recordedChunks = [];
         const captureCanvas = document.createElement('canvas');
@@ -346,13 +380,12 @@ function toggleRecording() {
 
         mediaRecorder.start();
         isRecording = true;
-        btn.innerText = "⏹️ Arrêter";
+        if (btn) btn.innerText = "⏹️ Arrêter";
         
         function drawFrame() {
             if (!isRecording) return;
             ctx.filter = img.style.filter;
             ctx.clearRect(0, 0, captureCanvas.width, captureCanvas.height);
-            // On enregistre la version traitée par convolution si elle est présente
             const pc = document.getElementById('processed-canvas');
             if(pc) ctx.drawImage(pc, 0, 0); else ctx.drawImage(img, 0, 0);
             requestAnimationFrame(drawFrame);
@@ -372,20 +405,32 @@ function moveH(dir) {
 }
 
 function sendRawControl(cmd, val) { 
+    if (!espIp) return;
     fetch(`http://${espIp}/control?cmd=${cmd}&val=${val}`, { mode: 'cors' }); 
 }
 
 function applyFilters() {
-    const b = document.getElementById('slider-bright').value;
-    const s = document.getElementById('slider-saturate').value;
-    const c = document.getElementById('slider-contrast').value;
+    const bSlider = document.getElementById('slider-bright');
+    const sSlider = document.getElementById('slider-saturate');
+    const cSlider = document.getElementById('slider-contrast');
     
-    document.getElementById('val-bright').innerText = b + '%';
-    document.getElementById('val-saturate').innerText = s + '%';
-    document.getElementById('val-contrast').innerText = c + '%';
+    if (!bSlider || !sSlider || !cSlider) return;
+    
+    const b = bSlider.value;
+    const s = sSlider.value;
+    const c = cSlider.value;
+    
+    const bVal = document.getElementById('val-bright');
+    const sVal = document.getElementById('val-saturate');
+    const cVal = document.getElementById('val-contrast');
+    
+    if (bVal) bVal.innerText = b + '%';
+    if (sVal) sVal.innerText = s + '%';
+    if (cVal) cVal.innerText = c + '%';
     
     const filterString = `brightness(${b}%) saturate(${s}%) contrast(${c}%)`;
-    document.getElementById('video-stream').style.filter = filterString;
+    const img = document.getElementById('video-stream');
+    if (img) img.style.filter = filterString;
     
     saveConfigToLocalStorage();
 }
@@ -395,6 +440,9 @@ function setPreset(p) {
     const s = document.getElementById('slider-saturate');
     const c = document.getElementById('slider-contrast');
     const img = document.getElementById('video-stream');
+    
+    if (!b || !s || !c || !img) return;
+    
     if(p==='normal'){ b.value=100; s.value=100; c.value=100; img.style.filter=''; }
     else if(p==='vision-noire'){ b.value=150; s.value=10; c.value=140; img.style.filter='brightness(150%) saturate(10%) contrast(140%) hue-rotate(90deg) sepia(100%) saturate(300%)'; }
     else if(p==='high-contrast'){ b.value=95; s.value=140; c.value=160; img.style.filter='brightness(95%) contrast(160%) saturate(140%)'; }
@@ -403,13 +451,14 @@ function setPreset(p) {
 
 function rotateVideo() { 
     currentRotation = (currentRotation + 90) % 360; 
-    document.getElementById('canvas-wrapper').style.transform = `rotate(${currentRotation}deg)`; 
+    const wrapper = document.getElementById('canvas-wrapper');
+    if (wrapper) wrapper.style.transform = `rotate(${currentRotation}deg)`; 
     saveConfigToLocalStorage();
 }
 
 function takeSnapshot() { 
     const img = document.getElementById('video-stream'); 
-    if(!isSystemOn||!img.naturalWidth) return; 
+    if(!isSystemOn || !img || !img.naturalWidth) return; 
     const cv=document.createElement('canvas'); 
     cv.width=img.naturalWidth; cv.height=img.naturalHeight; 
     const ctx = cv.getContext('2d');
