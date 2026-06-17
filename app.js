@@ -47,107 +47,120 @@ window.addEventListener('DOMContentLoaded', function() {
     logCount = 0;
 
     root.innerHTML = `
-        <div class="app-container">
-            <header class="main-header">
-                <div class="logo-area">
-                    <h1>D<span>O</span>NAMESTRE</h1>
-                    <p class="subtitle">AXIS-H MONITORING INTERFACE</p>
-                </div>
-                <div class="connection-panel">
-                    <input type="text" id="esp-ip" class="ip-input" placeholder="Ex: 192.168.1.20" />
-                    <button id="power-main" class="connect-btn" onclick="connectSystem()">Lier l'appareil</button>
-                </div>
-            </header>
+        <body>
+    <div class="app-container">
+        <header class="pro-header">
+            <div class="brand-zone">
+                <h1 class="pro-logo">D<span class="power-glyph" id="power-main" onclick="toggleSystem()">⏻</span>NAMESTRE</h1>
+                <div class="sub-brand">AXIS-H MONITORING INTERFACE</div>
+            </div>
+            <div class="connection-zone">
+                <input type="text" id="esp-ip" class="pro-input" placeholder="Adresse IP (ex: 192.168.1.20)">
+                <button onclick="connectSystem()" class="pro-btn btn-primary">Lier l'appareil</button>
+            </div>
+        </header>
 
-            <nav class="tab-navigation">
-                <button id="btn-tab-live" class="tab-btn active" onclick="switchTab('live')">🎬 Studio Live</button>
-                <button id="btn-tab-console" class="tab-btn" onclick="switchTab('console')">📟 Console & Commandes <span id="log-count" class="badge">0</span></button>
-            </nav>
-
-            <main class="interface-body">
-                <div id="tab-live" class="tab-content active">
-                    <div class="studio-grid">
-                        <div class="video-card">
-                            <div class="card-header">
-                                <span class="status-indicator">Réseau Local Sécurisé</span>
-                                <span id="ai-status" class="status-badge">IA Inactive</span>
-                            </div>
-                            <div class="video-view" id="canvas-wrapper">
-                                <img id="video-stream" src="" alt="Aucun flux vidéo actif. Connectez l'ESP32." />
-                            </div>
-                            <div class="video-actions">
-                                <button class="pro-btn" onclick="rotateVideo()">🔄 Rotation 90°</button>
-                                <button class="pro-btn" onclick="takeSnapshot()">📸 Capture HD</button>
-                                <button id="rec-btn" class="pro-btn btn-danger" onclick="toggleRecording()">🔴 Enregistrer</button>
-                            </div>
-                        </div>
-
-                        <div class="control-card">
-                            <section class="control-section">
-                                <h3>TRAITEMENT D'IMAGE (LOCAL)</h3>
-                                <div class="toggle-row">
-                                    <label for="toggle-face">Détection faciale active</label>
-                                    <input type="checkbox" id="toggle-face" onchange="toggleFaceDetection()" class="switch-input" />
-                                </div>
-                                <div class="slider-group">
-                                    <div class="slider-header"><span>Luminosité</span><span id="val-bright">100%</span></div>
-                                    <input type="range" id="slider-bright" min="0" max="200" value="100" oninput="applyFilters()" />
-                                </div>
-                                <div class="slider-group">
-                                    <div class="slider-header"><span>Saturation</span><span id="val-saturate">100%</span></div>
-                                    <input type="range" id="slider-saturate" min="0" max="200" value="100" oninput="applyFilters()" />
-                                </div>
-                                <div class="slider-group">
-                                    <div class="slider-header"><span>Contraste</span><span id="val-contrast">100%</span></div>
-                                    <input type="range" id="slider-contrast" min="0" max="200" value="100" oninput="applyFilters()" />
-                                </div>
-                                <div class="preset-grid">
-                                    <button onclick="setPreset('normal')">Normal</button>
-                                    <button onclick="setPreset('vision-noire')">Vision Nuit</button>
-                                    <button onclick="setPreset('high-contrast')">Surveillance</button>
-                                    <button onclick="executeDirectCommand('status')">État Matériel</button>
-                                </div>
-                            </section>
-
-                            <section class="control-section">
-                                <h3>CONTRÔLE DE L'AXE</h3>
-                                <div class="axis-grid">
-                                    <button class="axis-btn" onclick="moveH('left')">◀ Gauche</button>
-                                    <button class="axis-btn homing" onclick="moveH('home')">🏠 Homing</button>
-                                    <button class="axis-btn" onclick="moveH('right')">Droite ▶</button>
-                                </div>
-                            </section>
-                        </div>
-                    </div>
-                </div>
-
-                <div id="tab-console" class="tab-content">
-                    <div class="console-grid">
-                        <div class="console-card">
-                            <div class="console-header">
-                                <h3>CONSOLE LOGS</h3>
-                                <div class="console-actions">
-                                    <button onclick="copyLogs()">📋 Copier</button>
-                                    <button onclick="clearConsole()">🗑️ Effacer</button>
-                                </div>
-                            </div>
-                            <div id="console-output" class="console-terminal"></div>
-                            <div class="console-input-wrapper">
-                                <input type="text" id="cmd-field" placeholder="Saisir une syntaxe commande..." onkeydown="handleConsoleInput(event)" />
-                            </div>
-                        </div>
-
-                        <div class="dictionary-card">
-                            <div class="dictionary-header">
-                                <h3>DICTIONNAIRE LOCAL</h3>
-                                <input type="text" id="sidebar-search" placeholder="Filtrer les commandes..." oninput="filterCommands()" />
-                            </div>
-                            <div id="commands-container" class="dictionary-list"></div>
-                        </div>
-                    </div>
-                </div>
-            </main>
+        <div class="tabs-nav">
+            <button class="tab-btn active" onclick="switchTab('studio')">🎬 Studio Live</button>
+            <button class="tab-btn" onclick="switchTab('terminal')">📟 Console & Commandes <span id="log-count" class="badge">0</span></button>
         </div>
+
+        <main class="main-content">
+            <div id="tab-studio" class="tab-content active">
+                <div class="studio-grid">
+                    <div class="pro-card video-card">
+                        <div class="video-viewport">
+                            <div class="status-badge secure">Réseau Local Sécurisé</div>
+                            <div id="ai-status" class="status-badge ai-inactive">IA Inactive</div>
+                            <div class="canvas-container" id="canvas-wrapper">
+                                <img id="video-stream" src="" alt="Aucun flux vidéo actif. Connectez l'ESP32.">
+                            </div>
+                        </div>
+                        <div class="action-bar">
+                            <button class="pro-btn" onclick="rotateVideo()">🔄 Rotation 90°</button>
+                            <button class="pro-btn btn-secondary" onclick="takeSnapshot()">📸 Capture HD</button>
+                            <button class="pro-btn btn-danger" id="rec-btn" onclick="toggleRecording()">🔴 Enregistrer</button>
+                        </div>
+                    </div>
+
+                    <div class="pro-card settings-card">
+                        <div class="section-title">Traitement d'image (Local)</div>
+                        
+                        <div class="toggle-row">
+                            <span class="label-text">Détection faciale active</span>
+                            <label class="pro-switch">
+                                <input type="checkbox" id="toggle-face" onchange="toggleFaceDetection()">
+                                <span class="switch-slider"></span>
+                            </label>
+                        </div>
+
+                        <div class="range-group">
+                            <div class="range-labels"><span>Luminosité</span><span id="val-bright" class="value-display">100%</span></div>
+                            <input type="range" min="30" max="250" value="100" class="pro-slider" id="slider-bright" oninput="applyFilters()">
+                        </div>
+                        
+                        <div class="range-group">
+                            <div class="range-labels"><span>Saturation</span><span id="val-saturate" class="value-display">100%</span></div>
+                            <input type="range" min="0" max="250" value="100" class="pro-slider" id="slider-saturate" oninput="applyFilters()">
+                        </div>
+
+                        <div class="range-group">
+                            <div class="range-labels"><span>Contraste</span><span id="val-contrast" class="value-display">100%</span></div>
+                            <input type="range" min="50" max="200" value="100" class="pro-slider" id="slider-contrast" oninput="applyFilters()">
+                        </div>
+
+                        <div class="preset-grid">
+                            <button class="pro-btn btn-small" onclick="setPreset('normal')">Normal</button>
+                            <button class="pro-btn btn-small" onclick="setPreset('vision-noire')">Vision Nuit</button>
+                            <button class="pro-btn btn-small" onclick="setPreset('retro')">Contraste YUV</button>
+                            <button class="pro-btn btn-small" onclick="setPreset('high-contrast')">Surveillance</button>
+                        </div>
+
+                        <div class="ptz-section">
+                            <div class="section-title">Contrôle de l'axe</div>
+                            <div class="ptz-row">
+                                <button class="pro-btn" onclick="moveH('left')">◀ Gauche</button>
+                                <button class="pro-btn btn-center" onclick="moveH('home')">⌂ Homing</button>
+                                <button class="pro-btn" onclick="moveH('right')">Droite ▶</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="tab-terminal" class="tab-content">
+                <div class="terminal-layout">
+                    <div class="pro-card console-main">
+                        <div class="panel-header">
+                            <span class="panel-title">Stdout System Log</span>
+                            <div class="header-actions">
+                                <button onclick="copyLogs()" class="pro-btn btn-small">📋 Copier les logs</button>
+                                <button onclick="clearConsole()" class="pro-btn btn-small">Effacer</button>
+                            </div>
+                        </div>
+                        <div class="terminal-box" id="console-output">
+                            <div class="log-row sys">[SYS] Initialisation de la console de contrôle.</div>
+                        </div>
+                        <div class="terminal-input-bar">
+                            <span class="prompt">></span>
+                            <input type="text" id="cmd-field" placeholder="Entrer une commande (ex: home, left, normal)..." onkeydown="handleConsoleInput(event)">
+                        </div>
+                    </div>
+
+                    <div class="pro-card console-sidebar">
+                        <div class="sidebar-header">
+                            <div class="section-title" style="margin-bottom: 10px;">Dictionnaire de commandes</div>
+                            <input type="text" id="sidebar-search" class="pro-input search-input" placeholder="🔍 Rechercher une commande..." oninput="filterCommands()">
+                        </div>
+                        <div class="command-list" id="commands-container">
+                            </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+    <script src="app.js"></script>
+</body>
     `;
 
     const ipField = document.getElementById('esp-ip');
