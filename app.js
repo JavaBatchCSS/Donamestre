@@ -178,11 +178,14 @@ function toggleSystem() {
     
     if (isSystemOn) {
         if(glyph) glyph.classList.add('active');
-        img.removeAttribute('crossorigin'); 
+        
+        // --- LA LIGNE CORRECTRICE CRITIQUE POUR LA CAPTURE ET LE FILM ---
+        img.crossOrigin = "anonymous"; 
+        
         img.src = `http://${espIp}/stream?cb=${Date.now()}`;
         img.style.display = "block";
         img.style.opacity = "1";
-        appendLog("Flux direct activé.", "success");
+        appendLog("Flux direct sécurisé activé. Prêt pour capture.", "success");
     } else {
         if(glyph) glyph.classList.remove('active');
         img.src = ''; 
@@ -193,7 +196,6 @@ function toggleSystem() {
         appendLog("Flux coupé.", "sys");
     }
 }
-
 // LOGICIEL DE REPIXELISATION PAR CONVOLUTION (Filtre de convolution 3x3)
 function startProcessingLoop() {
     const img = document.getElementById('video-stream');
