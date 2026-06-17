@@ -1,30 +1,26 @@
-// VARIABLES GLOBALES ET INITIALISATION DES PARAMÈTRES
-let currentRotation = parseInt(localStorage.getItem('donamestre_rotation')) || 0;
-let isSystemOn = false;
-let logCount = 0;
+// ==========================================
+// 1. DÉCLARATION SÉCURISÉE DES VARIABLES GLOBALES
+// ==========================================
+var logCount = 0; // Doit impérativement être tout en haut !
+var currentRotation = parseInt(localStorage.getItem('donamestre_rotation')) || 0;
+var isSystemOn = false;
 
 // Détection automatique de l'IP de la carte
-let espIp = window.location.hostname;
+var espIp = window.location.hostname;
 if (!espIp || espIp === "localhost" || espIp.includes("github.io")) {
     espIp = localStorage.getItem('donamestre_ip') || '';
 }
 
-let isAiReady = false;
-let faceDetectionInterval = null;
-
-// SÉCURITÉ RESEAU : ANTI-REBOND (DEBOUNCE)
-let lastRequestTime = 0;
+var isAiReady = false;
+var faceDetectionInterval = null;
+var lastRequestTime = 0;
 const REQUEST_THROTTLE_MS = 250; 
 
-// MODULE D'ENREGISTREMENT LOCAL VIDEO
-let mediaRecorder;
-let recordedChunks = [];
-let isRecording = false;
+var mediaRecorder;
+var recordedChunks = [];
+var isRecording = false;
+var useUpscaling = localStorage.getItem('donamestre_upscale') === 'true';
 
-// ALGORITHME DE REPIXELISATION
-let useUpscaling = localStorage.getItem('donamestre_upscale') === 'true';
-
-// BASE DE DONNÉES DU DICTIONNAIRE LATÉRAL
 const COMMANDS_DATABASE = [
     { syntax: "home", desc: "Exécute le recalage initial sur la butée physique." },
     { syntax: "left", desc: "Fait tourner l'axe horizontal vers la gauche." },
@@ -40,68 +36,72 @@ const COMMANDS_DATABASE = [
     { syntax: "clear", desc: "Efface l'intégralité de l'historique de la console." }
 ];
 
-// GENERATION DYNAMIQUE ABSOLUTE AU CHARGEMENT (Soulage l'ESP32)
-window.addEventListener('DOMContentLoaded', async () => {
+// ==========================================
+// 2. ÉVÉNEMENT PRINCIPAL DE GÉNÉRATION D'INTERFACE
+// ==========================================
+window.addEventListener('DOMContentLoaded', function() {
     const root = document.getElementById('app-root');
     if (!root) return;
 
-    // Injection de toute la structure HTML d'origine
+    // Réinitialisation forcée du compteur de logs à l'affichage initial
+    logCount = 0;
+
     root.innerHTML = `
-        <div class='app-container'>
-            <header class='main-header'>
-                <div class='logo-area'>
+        <div class="app-container">
+            <header class="main-header">
+                <div class="logo-area">
                     <h1>D<span>O</span>NAMESTRE</h1>
-                    <p class='subtitle'>AXIS-H MONITORING INTERFACE</p>
+                    <p class="subtitle">AXIS-H MONITORING INTERFACE</p>
                 </div>
-                <div class='connection-panel'>
-                    <input type='text' id='esp-ip' class='ip-input' placeholder='Ex: 192.168.1.20' />
-                    <button id='power-main' class='connect-btn' onclick='connectSystem()'>Lier l'appareil</button>
+                <div class="connection-panel">
+                    <input type="text" id="esp-ip" class="ip-input" placeholder="Ex: 192.168.1.20" />
+                    <button id="power-main" class="connect-btn" onclick="connectSystem()">Lier l'appareil</button>
                 </div>
             </header>
 
-            <nav class='tab-navigation'>
-                <button id='btn-tab-live' class='tab-btn active' onclick="switchTab('live')">🎬 Studio Live</button>
-                <button id='btn-tab-console' class='tab-btn' onclick="switchTab('console')">📟 Console & Commandes <span id='log-count' class='badge'>0</span></button>
+            <nav class="tab-navigation">
+                <button id="btn-tab-live" class="tab-btn active" onclick="switchTab('live')">🎬 Studio Live</button>
+                <button id="btn-tab-console" class="tab-btn" onclick="switchTab('console')">📟 Console & Commandes <span id="log-count" class="badge">0</span></button>
             </nav>
 
-            <main class='interface-body'>
-                <div id='tab-live' class='tab-content active'>
-                    <div class='studio-grid'>
-                        <div class='video-card'>
-                            <div class='card-header'>
-                                <span class='status-indicator'>Réseau Local Sécurisé</span>
-                                <span id='ai-status' class='status-badge'>IA Inactive</span>
+            <main class="interface-body">
+                <div id="tab-live" class="tab-content active">
+                    <div class="studio-grid">
+                        <div class="video-card">
+                            <div class="card-header">
+                                <span class="status-indicator">Réseau Local Sécurisé</span>
+                                <span id="ai-status" class="status-badge">IA Inactive</span>
                             </div>
-                            <div class='video-view' id='canvas-wrapper'>
-                                <img id='video-stream' src='' alt='Aucun flux vidéo actif. Connectez l\`ESP32.' />
+                            <div class="video-view" id="canvas-wrapper">
+                                <img id="video-stream" src="" alt="Aucun flux vidéo actif. Connectez l'ESP32." />
                             </div>
-                            <div class='video-actions'>
-                                <button class='pro-btn' onclick='rotateVideo()'>🔄 Rotation 90°</button>
-                                <button class='pro-btn' onclick='takeSnapshot()'>📸 Capture HD</button>
-                                <button id='rec-btn' class='pro-btn btn-danger' onclick='toggleRecording()'>🔴 Enregistrer</button>
+                            <div class="video-actions">
+                                <button class="pro-btn" onclick="rotateVideo()">🔄 Rotation 90°</button>
+                                <button class="pro-btn" onclick="takeSnapshot()">📸 Capture HD</button>
+                                <button id="rec-btn" class="pro-btn btn-danger" onclick="toggleRecording()">🔴 Enregistrer</button>
                             </div>
                         </div>
 
-                        <div class='control-card'>
-                            <section class='control-section'>
+                        <div class="control-card">
+                            <section class="control-section">
                                 <h3>TRAITEMENT D'IMAGE (LOCAL)</h3>
-                                <div class='toggle-row'>
-                                    <label for='toggle-face'>Détection faciale active</label>
-                                    <input type='checkbox' id='toggle-face' onchange='toggleFaceDetection()' class='switch-input' />
+                                <div class="toggle-row">
+                                    <label for="toggle-face">Détection faciale active</label>
+                                    <input type="checkbox" id="toggle-face" onchange="toggleFaceDetection()" class="switch-input" />
                                 </div>
-                                <div class='slider-group'>
-                                    <div class='slider-header'><span>Luminosité</span><span id='val-bright'>100%</span></div>
-                                    <input type='range' id='slider-bright' min='0' max='200' value='100' oninput='applyFilters()' />
+                                <div class="slider-group">
+                                    <div class="slider-header"><span>Luminosité</span><span id="val-bright">100%</span></div>
+                                    <input type="range" id="slider-bright" min="0" max="200" value="100" oninput="applyFilters()" />
                                 </div>
-                                <div class='slider-group'>
-                                    <div class='slider-header'><span>Saturation</span><span id='val-saturate'>100%</span></div>
-                                    <input type='range' id='slider-saturate' min='0' max='200' value='100' oninput='applyFilters()' />
+                                <div class="slider-group">
+                                    <div class="slider-header"><span>Saturation</span><span id="val-saturate">100%</span></div>
+                                    <input type="range" id="slider-saturate" min="0" max="200" value="100" oninput="applyFilters()" />
                                 </div>
-                                <div class='slider-group'>
-                                    <div class='slider-header'><span>Contraste</span><span id='val-contrast'>100%</span></div>
-                                    <input type='range' id='slider-contrast' min='0' max='200' value='100' oninput='applyFilters()' />
+                                <div class="slider-group">
+                                    <div class="slider-header"><span>Contraste</span><span id="val-contrast">100%</span></div>
+                                    <input type="range" id="slider-contrast" min="0" max="200" value="100" oninput="applyFilters()" />
                                 </div>
-                                <div class='preset-grid'>
+                                <div class="preset-grid">
                                     <button onclick="setPreset('normal')">Normal</button>
                                     <button onclick="setPreset('vision-noire')">Vision Nuit</button>
                                     <button onclick="setPreset('high-contrast')">Surveillance</button>
@@ -109,40 +109,40 @@ window.addEventListener('DOMContentLoaded', async () => {
                                 </div>
                             </section>
 
-                            <section class='control-section'>
+                            <section class="control-section">
                                 <h3>CONTRÔLE DE L'AXE</h3>
-                                <div class='axis-grid'>
-                                    <button class='axis-btn' onclick="moveH('left')">◀ Gauche</button>
-                                    <button class='axis-btn homing' onclick="moveH('home')">🏠 Homing</button>
-                                    <button class='axis-btn' onclick="moveH('right')">Droite ▶</button>
+                                <div class="axis-grid">
+                                    <button class="axis-btn" onclick="moveH('left')">◀ Gauche</button>
+                                    <button class="axis-btn homing" onclick="moveH('home')">🏠 Homing</button>
+                                    <button class="axis-btn" onclick="moveH('right')">Droite ▶</button>
                                 </div>
                             </section>
                         </div>
                     </div>
                 </div>
 
-                <div id='tab-console' class='tab-content'>
-                    <div class='console-grid'>
-                        <div class='console-card'>
-                            <div class='console-header'>
+                <div id="tab-console" class="tab-content">
+                    <div class="console-grid">
+                        <div class="console-card">
+                            <div class="console-header">
                                 <h3>CONSOLE LOGS</h3>
-                                <div class='console-actions'>
-                                    <button onclick='copyLogs()'>📋 Copier</button>
-                                    <button onclick='clearConsole()'>🗑️ Effacer</button>
+                                <div class="console-actions">
+                                    <button onclick="copyLogs()">📋 Copier</button>
+                                    <button onclick="clearConsole()">🗑️ Effacer</button>
                                 </div>
                             </div>
-                            <div id='console-output' class='console-terminal'></div>
-                            <div class='console-input-wrapper'>
-                                <input type='text' id='cmd-field' placeholder='Saisir une syntaxe commande...' onkeydown='handleConsoleInput(event)' />
+                            <div id="console-output" class="console-terminal"></div>
+                            <div class="console-input-wrapper">
+                                <input type="text" id="cmd-field" placeholder="Saisir une syntaxe commande..." onkeydown="handleConsoleInput(event)" />
                             </div>
                         </div>
 
-                        <div class='dictionary-card'>
-                            <div class='dictionary-header'>
+                        <div class="dictionary-card">
+                            <div class="dictionary-header">
                                 <h3>DICTIONNAIRE LOCAL</h3>
-                                <input type='text' id='sidebar-search' placeholder='Filtrer les commandes...' oninput='filterCommands()' />
+                                <input type="text" id="sidebar-search" placeholder="Filtrer les commandes..." oninput="filterCommands()" />
                             </div>
-                            <div id='commands-container' class='dictionary-list'></div>
+                            <div id="commands-container" class="dictionary-list"></div>
                         </div>
                     </div>
                 </div>
@@ -150,11 +150,9 @@ window.addEventListener('DOMContentLoaded', async () => {
         </div>
     `;
 
-    // Configuration du champ IP
     const ipField = document.getElementById('esp-ip');
     if (ipField && espIp) ipField.value = espIp;
     
-    // Lancement des fonctions d'initialisation applicatives
     if (espIp) connectSystem();
     restoreSavedConfig();
     buildSidebarCommands();
@@ -162,41 +160,14 @@ window.addEventListener('DOMContentLoaded', async () => {
     startProcessingLoop();
 });
 
-// SAUVEGARDE ET RESTAURATION AUTOMATIQUE DES CONFIGURATIONS
-function restoreSavedConfig() {
-    const b = localStorage.getItem('donamestre_bright') || '100';
-    const s = localStorage.getItem('donamestre_saturate') || '100';
-    const c = localStorage.getItem('donamestre_contrast') || '100';
-    
-    if(document.getElementById('slider-bright')) document.getElementById('slider-bright').value = b;
-    if(document.getElementById('slider-saturate')) document.getElementById('slider-saturate').value = s;
-    if(document.getElementById('slider-contrast')) document.getElementById('slider-contrast').value = c;
-    
-    const wrapper = document.getElementById('canvas-wrapper');
-    if (wrapper) wrapper.style.transform = `rotate(${currentRotation}deg)`;
-    applyFilters();
-}
-
-function saveConfigToLocalStorage() {
-    const bSlider = document.getElementById('slider-bright');
-    const sSlider = document.getElementById('slider-saturate');
-    const cSlider = document.getElementById('slider-contrast');
-
-    if (bSlider) localStorage.setItem('donamestre_bright', bSlider.value);
-    if (sSlider) localStorage.setItem('donamestre_saturate', sSlider.value);
-    if (cSlider) localStorage.setItem('donamestre_contrast', cSlider.value);
-    
-    localStorage.setItem('donamestre_rotation', currentRotation);
-    localStorage.setItem('donamestre_upscale', useUpscaling);
-}
-
-// LOGS SYSTEME
-function appendLog(message, type = 'sys') {
+// S'assurer que appendLog utilise correctement la variable globale globale
+function appendLog(message, type) {
+    if(!type) type = 'sys';
     const consoleBody = document.getElementById('console-output');
     if (!consoleBody) return;
     const row = document.createElement('div');
-    row.className = `log-row ${type}`;
-    row.innerText = `[${new Date().toLocaleTimeString()}] ${message}`;
+    row.className = `log-row \${type}`;
+    row.innerText = `[\${new Date().toLocaleTimeString()}] \${message}`;
     consoleBody.appendChild(row);
     consoleBody.scrollTop = consoleBody.scrollHeight;
     
@@ -204,6 +175,8 @@ function appendLog(message, type = 'sys') {
     const countBadge = document.getElementById('log-count');
     if (countBadge) countBadge.innerText = logCount;
 }
+
+// ... CONSERVER LE RESTE DES FONCTIONS (connectSystem, switchTab, moveH, etc.) SANS TOUCHER À LEUR LOGIQUE INTERNE ...
 
 function copyLogs() {
     const consoleBody = document.getElementById('console-output');
