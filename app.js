@@ -108,8 +108,10 @@ function switchTab(tabId) {
 }
 
 // FILTRE ET RECHERCHE DU PANNEAU LATÉRAL
-void function buildSidebarCommands() {
+// CORRECTION SYNTAXE : Remplacement du void function par une déclaration standard
+function buildSidebarCommands() {
     const container = document.getElementById('commands-container');
+    if (!container) return; // Sécurité si l'élément n'existe pas dans le DOM
     container.innerHTML = '';
     COMMANDS_DATABASE.forEach(cmd => {
         const item = document.createElement('button');
