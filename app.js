@@ -318,34 +318,34 @@ function rotateStream() {
 // ==========================================
 // CAPTURE — avec filtres, rotation, miroirs
 // ==========================================
+// ... (dans capturePhoto et renderFrame, utiliser une résolution plus grande)
+
 function capturePhoto() {
     const img = document.getElementById('video-stream');
     if (!img.src || img.style.display === 'none') { logConsole("Flux non actif", "err"); return; }
 
+    // Canvas en résolution élevée pour la capture
     const canvas = document.createElement('canvas');
-    canvas.width = img.naturalWidth || 800;
-    canvas.height = img.naturalHeight || 600;
+    canvas.width = 1600;   // ← Haute résolution capture
+    canvas.height = 1200;
     const ctx = canvas.getContext('2d');
 
-    // Appliquer filtres CSS
     ctx.filter = img.style.filter || 'none';
-
-    // Appliquer transformation (rotation + miroirs)
     ctx.save();
     ctx.translate(canvas.width/2, canvas.height/2);
     ctx.rotate(filterState.rotation * Math.PI / 180);
     if (filterState.mirrorH) ctx.scale(-1, 1);
     if (filterState.mirrorV) ctx.scale(1, -1);
-    ctx.drawImage(img, -canvas.width/2, -canvas.height/2);
+    // Dessiner l'image en la stretchant pour remplir
+    ctx.drawImage(img, -canvas.width/2, -canvas.height/2, canvas.width, canvas.height);
     ctx.restore();
 
     const a = document.createElement('a');
     a.download = `S3PTZ_${Date.now()}.jpg`;
-    a.href = canvas.toDataURL('image/jpeg', 0.95);
+    a.href = canvas.toDataURL('image/jpeg', 0.98);  // ← Qualité max 98%
     a.click();
-    logConsole("Photo capturée (filtres appliqués)", "success");
+    logConsole("Photo HD capturée (1600x1200)", "success");
 }
-
 // ==========================================
 // ENREGISTREMENT — avec filtres, rotation, miroirs
 // ==========================================
