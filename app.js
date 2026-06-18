@@ -1,6 +1,6 @@
 // ==========================================
 // S3-PRO PTZ — APP.JS
-// Filtres corrigés, sliders synchronisés, capture/film avec effets
+// Miroirs H/V, filtres corrigés, sliders synchronisés
 // ==========================================
 
 var espIp = window.location.hostname;
@@ -14,20 +14,18 @@ var ptzInterval = null;
 var mediaRecorder = null;
 var recordCanvas = null;
 var recordCtx = null;
-var recordStream = null;
 
-// Valeurs actuelles des filtres (synchronisées)
+// État filtres
 var filterState = {
     brightness: 100,
     saturation: 100,
     contrast: 100,
     rotation: 0,
+    mirrorH: false,
+    mirrorV: false,
     mode: 'normal'
 };
 
-// ==========================================
-// INITIALISATION
-// ==========================================
 window.addEventListener('DOMContentLoaded', function() {
     const root = document.getElementById('app-root');
     if (!root) return;
@@ -73,33 +71,40 @@ window.addEventListener('DOMContentLoaded', function() {
                         <div class="ptz-grid">
                             <div></div>
                             <button class="ptz-btn ptz-arrow" 
-                                onmousedown="ptzStart('V', -32)" 
-                                onmouseup="ptzStop()" 
-                                onmouseleave="ptzStop()"
-                                ontouchstart="ptzStart('V', -32)" 
-                                ontouchend="ptzStop()">▲</button>
+                                onmousedown="ptzStart('V', -32)" onmouseup="ptzStop()" onmouseleave="ptzStop()"
+                                ontouchstart="ptzStart('V', -32)" ontouchend="ptzStop()">▲</button>
                             <div></div>
                             <button class="ptz-btn ptz-arrow" 
-                                onmousedown="ptzStart('H', -32)" 
-                                onmouseup="ptzStop()" 
-                                onmouseleave="ptzStop()"
-                                ontouchstart="ptzStart('H', -32)" 
-                                ontouchend="ptzStop()">◀ Gauche</button>
+                                onmousedown="ptzStart('H', -32)" onmouseup="ptzStop()" onmouseleave="ptzStop()"
+                                ontouchstart="ptzStart('H', -32)" ontouchend="ptzStop()">◀ Gauche</button>
                             <button class="ptz-btn ptz-home" onclick="sendCmd('HOME')">⌂ HOME</button>
                             <button class="ptz-btn ptz-arrow" 
-                                onmousedown="ptzStart('H', 32)" 
-                                onmouseup="ptzStop()" 
-                                onmouseleave="ptzStop()"
-                                ontouchstart="ptzStart('H', 32)" 
-                                ontouchend="ptzStop()">Droite ▶</button>
+                                onmousedown="ptzStart('H', 32)" onmouseup="ptzStop()" onmouseleave="ptzStop()"
+                                ontouchstart="ptzStart('H', 32)" ontouchend="ptzStop()">Droite ▶</button>
                             <div></div>
                             <button class="ptz-btn ptz-arrow" 
-                                onmousedown="ptzStart('V', 32)" 
-                                onmouseup="ptzStop()" 
-                                onmouseleave="ptzStop()"
-                                ontouchstart="ptzStart('V', 32)" 
-                                ontouchend="ptzStop()">▼</button>
+                                onmousedown="ptzStart('V', 32)" onmouseup="ptzStop()" onmouseleave="ptzStop()"
+                                ontouchstart="ptzStart('V', 32)" ontouchend="ptzStop()">▼</button>
                             <div></div>
+                        </div>
+                    </div>
+
+                    <!-- MIROIRS -->
+                    <div class="pro-card">
+                        <div class="section-title">🔃 Miroirs</div>
+                        <div class="toggle-row">
+                            <span class="label-text">Miroir Horizontal</span>
+                            <label class="pro-switch">
+                                <input type="checkbox" id="mirror-h" onchange="toggleMirror('h', this.checked)">
+                                <span class="switch-slider"></span>
+                            </label>
+                        </div>
+                        <div class="toggle-row">
+                            <span class="label-text">Miroir Vertical</span>
+                            <label class="pro-switch">
+                                <input type="checkbox" id="mirror-v" onchange="toggleMirror('v', this.checked)">
+                                <span class="switch-slider"></span>
+                            </label>
                         </div>
                     </div>
 
@@ -161,39 +166,24 @@ window.addEventListener('DOMContentLoaded', function() {
                         <span class="panel-title">📖 Commandes</span>
                     </div>
                     <div class="command-list">
-                        <div class="cmd-item" onclick="executeCommand('home')">
-                            <span class="cmd-syntax">home</span>
-                            <span class="cmd-desc">Recalage + centrage</span>
-                        </div>
-                        <div class="cmd-item" onclick="executeCommand('left')">
-                            <span class="cmd-syntax">left</span>
-                            <span class="cmd-desc">Pan gauche</span>
-                        </div>
-                        <div class="cmd-item" onclick="executeCommand('right')">
-                            <span class="cmd-syntax">right</span>
-                            <span class="cmd-desc">Pan droite</span>
-                        </div>
-                        <div class="cmd-item" onclick="executeCommand('up')">
-                            <span class="cmd-syntax">up</span>
-                            <span class="cmd-desc">Tilt haut</span>
-                        </div>
-                        <div class="cmd-item" onclick="executeCommand('down')">
-                            <span class="cmd-syntax">down</span>
-                            <span class="cmd-desc">Tilt bas</span>
-                        </div>
-                        <div class="cmd-item" onclick="executeCommand('status')">
-                            <span class="cmd-syntax">status</span>
-                            <span class="cmd-desc">État système</span>
-                        </div>
-                        <div class="cmd-item" onclick="executeCommand('clear')">
-                            <span class="cmd-syntax">clear</span>
-                            <span class="cmd-desc">Effacer console</span>
-                        </div>
+                        <div class="cmd-item" onclick="executeCommand('home')"><span class="cmd-syntax">home</span><span class="cmd-desc">Recalage + centrage</span></div>
+                        <div class="cmd-item" onclick="executeCommand('left')"><span class="cmd-syntax">left</span><span class="cmd-desc">Pan gauche</span></div>
+                        <div class="cmd-item" onclick="executeCommand('right')"><span class="cmd-syntax">right</span><span class="cmd-desc">Pan droite</span></div>
+                        <div class="cmd-item" onclick="executeCommand('up')"><span class="cmd-syntax">up</span><span class="cmd-desc">Tilt haut</span></div>
+                        <div class="cmd-item" onclick="executeCommand('down')"><span class="cmd-syntax">down</span><span class="cmd-desc">Tilt bas</span></div>
+                        <div class="cmd-item" onclick="executeCommand('status')"><span class="cmd-syntax">status</span><span class="cmd-desc">État système</span></div>
+                        <div class="cmd-item" onclick="executeCommand('clear')"><span class="cmd-syntax">clear</span><span class="cmd-desc">Effacer console</span></div>
                     </div>
                 </div>
             </div>
         </div>
     </div>`;
+
+    // Charger miroirs sauvegardés
+    filterState.mirrorH = localStorage.getItem('ptz_mirror_h') === 'true';
+    filterState.mirrorV = localStorage.getItem('ptz_mirror_v') === 'true';
+    document.getElementById('mirror-h').checked = filterState.mirrorH;
+    document.getElementById('mirror-v').checked = filterState.mirrorV;
 
     if (espIp) connectSystem();
 });
@@ -218,7 +208,7 @@ function connectSystem() {
         .then(d => {
             isConnected = true;
             updateStatus(true);
-            logConsole(`Connecté: ${espIp} | RSSI: ${d.rssi}dBm`, "success");
+            logConsole(`Connecté: ${espIp} | RSSI:${d.rssi}dBm`, "success");
         })
         .catch(e => {
             updateStatus(false);
@@ -227,8 +217,7 @@ function connectSystem() {
 }
 
 function updateStatus(ok) {
-    const dot = document.getElementById('conn-status');
-    dot.className = ok ? 'status-dot online' : 'status-dot offline';
+    document.getElementById('conn-status').className = ok ? 'status-dot online' : 'status-dot offline';
 }
 
 // ==========================================
@@ -241,10 +230,7 @@ function ptzStart(axis, steps) {
 }
 
 function ptzStop() {
-    if (ptzInterval) {
-        clearInterval(ptzInterval);
-        ptzInterval = null;
-    }
+    if (ptzInterval) { clearInterval(ptzInterval); ptzInterval = null; }
 }
 
 function sendCmd(cmd) {
@@ -260,72 +246,56 @@ function sendCmd(cmd) {
 }
 
 // ==========================================
-// FILTRES IMAGE — CORRIGÉS ET SYNCHRONISÉS
+// MIROIRS
+// ==========================================
+function toggleMirror(axis, checked) {
+    if (axis === 'h') filterState.mirrorH = checked;
+    else filterState.mirrorV = checked;
+    localStorage.setItem('ptz_mirror_' + axis, checked);
+    applyTransform();
+}
+
+function applyTransform() {
+    const img = document.getElementById('video-stream');
+    if (!img) return;
+    let transform = `rotate(${filterState.rotation}deg)`;
+    if (filterState.mirrorH) transform += ' scaleX(-1)';
+    if (filterState.mirrorV) transform += ' scaleY(-1)';
+    img.style.transform = transform;
+}
+
+// ==========================================
+// FILTRES
 // ==========================================
 function updateFilter(type, value) {
     filterState[type] = parseInt(value);
-    
-    // Mettre à jour l'affichage du pourcentage
     document.getElementById('val-' + type).textContent = value + '%';
-    
-    // Appliquer le filtre
     applyFilters();
 }
 
 function applyFilters() {
     const img = document.getElementById('video-stream');
     if (!img) return;
-    
     let filter = `brightness(${filterState.brightness}%) saturate(${filterState.saturation}%) contrast(${filterState.contrast}%)`;
-    
-    // Modes spéciaux
     switch(filterState.mode) {
-        case 'night':
-            filter += ' invert(1) hue-rotate(180deg) brightness(1.5)';
-            break;
-        case 'yuv':
-            filter += ' grayscale(100%) contrast(180%) brightness(1.2)';
-            break;
-        case 'surveillance':
-            filter += ' grayscale(100%) contrast(250%) brightness(0.9)';
-            break;
+        case 'night': filter += ' invert(1) hue-rotate(180deg) brightness(1.5)'; break;
+        case 'yuv': filter += ' grayscale(100%) contrast(180%) brightness(1.2)'; break;
+        case 'surveillance': filter += ' grayscale(100%) contrast(250%) brightness(0.9)'; break;
     }
-    
     img.style.filter = filter;
 }
 
 function setMode(mode) {
     filterState.mode = mode;
-    
-    // Mettre à jour les boutons visuellement
     document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
     document.getElementById('mode-' + mode).classList.add('active');
-    
-    // Synchroniser les sliders selon le mode
+
     switch(mode) {
-        case 'night':
-            setSlider('brightness', 150);
-            setSlider('saturation', 80);
-            setSlider('contrast', 120);
-            break;
-        case 'yuv':
-            setSlider('brightness', 120);
-            setSlider('saturation', 0);
-            setSlider('contrast', 180);
-            break;
-        case 'surveillance':
-            setSlider('brightness', 90);
-            setSlider('saturation', 0);
-            setSlider('contrast', 250);
-            break;
-        case 'normal':
-        default:
-            setSlider('brightness', 100);
-            setSlider('saturation', 100);
-            setSlider('contrast', 100);
-            break;
+        case 'night': setSlider('brightness', 150); setSlider('saturation', 80); setSlider('contrast', 120); break;
+        case 'yuv': setSlider('brightness', 120); setSlider('saturation', 0); setSlider('contrast', 180); break;
+        case 'surveillance': setSlider('brightness', 90); setSlider('saturation', 0); setSlider('contrast', 250); break;
+        default: setSlider('brightness', 100); setSlider('saturation', 100); setSlider('contrast', 100); break;
     }
-    
     applyFilters();
 }
 
@@ -342,140 +312,96 @@ function setSlider(type, value) {
 // ==========================================
 function rotateStream() {
     filterState.rotation = (filterState.rotation + 90) % 360;
-    const img = document.getElementById('video-stream');
-    img.style.transform = `rotate(${filterState.rotation}deg)`;
+    applyTransform();
 }
 
 // ==========================================
-// CAPTURE PHOTO — AVEC FILTRES APPLIQUÉS
+// CAPTURE — avec filtres, rotation, miroirs
 // ==========================================
 function capturePhoto() {
     const img = document.getElementById('video-stream');
-    if (!img.src || img.style.display === 'none') {
-        logConsole("Flux non actif", "err");
-        return;
-    }
-    
-    // Créer canvas avec les dimensions réelles
+    if (!img.src || img.style.display === 'none') { logConsole("Flux non actif", "err"); return; }
+
     const canvas = document.createElement('canvas');
     canvas.width = img.naturalWidth || 800;
     canvas.height = img.naturalHeight || 600;
     const ctx = canvas.getContext('2d');
-    
-    // Appliquer les filtres sur le canvas
+
+    // Appliquer filtres CSS
     ctx.filter = img.style.filter || 'none';
-    
-    // Gérer la rotation
-    if (filterState.rotation !== 0) {
-        ctx.save();
-        ctx.translate(canvas.width/2, canvas.height/2);
-        ctx.rotate(filterState.rotation * Math.PI / 180);
-        ctx.drawImage(img, -canvas.width/2, -canvas.height/2);
-        ctx.restore();
-    } else {
-        ctx.drawImage(img, 0, 0);
-    }
-    
-    // Télécharger
+
+    // Appliquer transformation (rotation + miroirs)
+    ctx.save();
+    ctx.translate(canvas.width/2, canvas.height/2);
+    ctx.rotate(filterState.rotation * Math.PI / 180);
+    if (filterState.mirrorH) ctx.scale(-1, 1);
+    if (filterState.mirrorV) ctx.scale(1, -1);
+    ctx.drawImage(img, -canvas.width/2, -canvas.height/2);
+    ctx.restore();
+
     const a = document.createElement('a');
     a.download = `S3PTZ_${Date.now()}.jpg`;
     a.href = canvas.toDataURL('image/jpeg', 0.95);
     a.click();
-    
-    logConsole("Photo capturée avec filtres", "success");
+    logConsole("Photo capturée (filtres appliqués)", "success");
 }
 
 // ==========================================
-// ENREGISTREMENT VIDÉO — AVEC FILTRES
+// ENREGISTREMENT — avec filtres, rotation, miroirs
 // ==========================================
 function toggleRecord() {
     const btn = document.getElementById('btn-record');
-    
-    if (!isRecording) {
-        startRecording();
-        btn.innerHTML = "⏹️ Arrêter";
-        btn.classList.add('recording');
-    } else {
-        stopRecording();
-        btn.innerHTML = "🔴 Enregistrer";
-        btn.classList.remove('recording');
-    }
+    if (!isRecording) { startRecording(); btn.innerHTML = "⏹️ Arrêter"; btn.classList.add('recording'); }
+    else { stopRecording(); btn.innerHTML = "🔴 Enregistrer"; btn.classList.remove('recording'); }
 }
 
 function startRecording() {
     const img = document.getElementById('video-stream');
-    if (!img.src || img.style.display === 'none') {
-        logConsole("Flux non actif", "err");
-        return;
-    }
-    
-    // Canvas pour l'enregistrement avec filtres
+    if (!img.src || img.style.display === 'none') { logConsole("Flux non actif", "err"); return; }
+
     recordCanvas = document.createElement('canvas');
     recordCanvas.width = img.naturalWidth || 640;
     recordCanvas.height = img.naturalHeight || 480;
     recordCtx = recordCanvas.getContext('2d');
-    
-    // Stream du canvas
-    recordStream = recordCanvas.captureStream(30);
-    
-    // MediaRecorder
-    mediaRecorder = new MediaRecorder(recordStream, {
-        mimeType: 'video/webm;codecs=vp9'
-    });
-    
+
+    const stream = recordCanvas.captureStream(30);
+    mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9' });
     const chunks = [];
-    mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) chunks.push(e.data);
-    };
-    
+    mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
     mediaRecorder.onstop = () => {
         const blob = new Blob(chunks, { type: 'video/webm' });
-        const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = url;
+        a.href = URL.createObjectURL(blob);
         a.download = `S3PTZ_RECORD_${Date.now()}.webm`;
         a.click();
         logConsole("Vidéo sauvegardée", "success");
     };
-    
-    mediaRecorder.start(100); // Capture par tranche de 100ms
+
+    mediaRecorder.start(100);
     isRecording = true;
     logConsole("Enregistrement démarré", "sys");
-    
-    // Boucle de rendu
     renderFrame();
 }
 
 function renderFrame() {
     if (!isRecording || !recordCtx) return;
-    
     const img = document.getElementById('video-stream');
-    
-    // Appliquer les filtres
+
     recordCtx.filter = img.style.filter || 'none';
-    
-    // Rotation
-    if (filterState.rotation !== 0) {
-        recordCtx.save();
-        recordCtx.translate(recordCanvas.width/2, recordCanvas.height/2);
-        recordCtx.rotate(filterState.rotation * Math.PI / 180);
-        recordCtx.drawImage(img, -recordCanvas.width/2, -recordCanvas.height/2);
-        recordCtx.restore();
-    } else {
-        recordCtx.drawImage(img, 0, 0, recordCanvas.width, recordCanvas.height);
-    }
-    
+    recordCtx.save();
+    recordCtx.translate(recordCanvas.width/2, recordCanvas.height/2);
+    recordCtx.rotate(filterState.rotation * Math.PI / 180);
+    if (filterState.mirrorH) recordCtx.scale(-1, 1);
+    if (filterState.mirrorV) recordCtx.scale(1, -1);
+    recordCtx.drawImage(img, -recordCanvas.width/2, -recordCanvas.height/2);
+    recordCtx.restore();
+
     requestAnimationFrame(renderFrame);
 }
 
 function stopRecording() {
-    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-        mediaRecorder.stop();
-    }
-    isRecording = false;
-    recordCanvas = null;
-    recordCtx = null;
-    recordStream = null;
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+    isRecording = false; recordCanvas = null; recordCtx = null;
     logConsole("Enregistrement arrêté", "sys");
 }
 
@@ -495,18 +421,14 @@ function logConsole(msg, type) {
 
 function clearLogs() {
     const out = document.getElementById('console-output');
-    if (out) {
-        out.innerHTML = '<div class="log-row sys">[SYS] Console effacée</div>';
-    }
+    if (out) out.innerHTML = '<div class="log-row sys">[SYS] Console effacée</div>';
 }
 
 function copyLogs() {
     const out = document.getElementById('console-output');
     if (!out) return;
     const text = Array.from(out.querySelectorAll('.log-row')).map(r => r.textContent).join('\n');
-    navigator.clipboard.writeText(text).then(() => {
-        logConsole("Logs copiés", "success");
-    });
+    navigator.clipboard.writeText(text).then(() => logConsole("Logs copiés", "success"));
 }
 
 function executeCommand(val) {
@@ -527,8 +449,7 @@ function executeCommand(val) {
                 logConsole(`IP:${d.ip} RSSI:${d.rssi}dBm Uptime:${d.uptime}s`, "sys");
             });
             return;
-        default:
-            logConsole("Inconnu: " + cmd, "err");
+        default: logConsole("Inconnu: " + cmd, "err");
     }
 }
 
