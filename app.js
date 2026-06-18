@@ -1,40 +1,30 @@
 // ==========================================
 // S3-PRO PTZ — APP.JS
-// Miroirs écran (pas image), zoom/pan, tout sauvegardé
+// Miroirs H/V, filtres corrigés, sliders synchronisés
 // ==========================================
-
-// Charger état sauvegardé
-var saved = JSON.parse(localStorage.getItem('ptz_state') || '{}');
 
 var espIp = window.location.hostname;
 if (!espIp || espIp === "localhost" || espIp.includes("github.io")) {
-    espIp = saved.espIp || '';
+    espIp = localStorage.getItem('ptz_ip') || '';
 }
 
 var isConnected = false;
 var isRecording = false;
 var ptzInterval = null;
 var mediaRecorder = null;
+var recordCanvas = null;
+var recordCtx = null;
 
-// État complet avec valeurs par défaut
-var state = {
-    brightness: saved.brightness !== undefined ? saved.brightness : 100,
-    saturation: saved.saturation !== undefined ? saved.saturation : 100,
-    contrast: saved.contrast !== undefined ? saved.contrast : 100,
-    rotation: saved.rotation !== undefined ? saved.rotation : 0,      // Rotation image
-    screenRotation: saved.screenRotation !== undefined ? saved.screenRotation : 0,  // Rotation écran
-    zoom: saved.zoom !== undefined ? saved.zoom : 100,
-    panX: saved.panX !== undefined ? saved.panX : 0,
-    panY: saved.panY !== undefined ? saved.panY : 0,
-    mirrorH: saved.mirrorH || false,    // Miroir écran H
-    mirrorV: saved.mirrorV || false,    // Miroir écran V
-    mode: saved.mode || 'normal'
+// État filtres
+var filterState = {
+    brightness: 100,
+    saturation: 100,
+    contrast: 100,
+    rotation: 0,
+    mirrorH: false,
+    mirrorV: false,
+    mode: 'normal'
 };
-
-function saveState() {
-    state.espIp = espIp;
-    localStorage.setItem('ptz_state', JSON.stringify(state));
-}
 
 window.addEventListener('DOMContentLoaded', function() {
     const root = document.getElementById('app-root');
@@ -45,7 +35,7 @@ window.addEventListener('DOMContentLoaded', function() {
         <header class="pro-header">
             <div class="brand-zone">
                 <h1 class="pro-logo">S3-PRO <span style="color:#6366f1">PTZ</span></h1>
-                <div class="sub-brand">PAN/TILT DUAL-AXIS</div>
+                <div class="sub-brand">PAN/TILT DUAL-AXIS MONITORING</div>
             </div>
             <div class="connection-zone">
                 <input type="text" id="esp-ip" class="pro-input" placeholder="IP ESP32" value="${espIp}">
@@ -55,98 +45,98 @@ window.addEventListener('DOMContentLoaded', function() {
         </header>
 
         <div class="tabs-nav">
-            <button id="nav-studio" class="tab-btn active" onclick="switchTab('studio')">🎬 Studio</button>
+            <button id="nav-studio" class="tab-btn active" onclick="switchTab('studio')">🎬 Studio Live</button>
             <button id="nav-terminal" class="tab-btn" onclick="switchTab('terminal')">📟 Terminal</button>
         </div>
 
         <div id="tab-studio" class="tab-content active">
             <div class="studio-grid">
                 <div class="video-zone">
-                    <div class="video-viewport" id="video-viewport">
+                    <div class="video-viewport">
+                        <div class="status-badge secure">● SÉCURISÉ</div>
                         <img id="video-stream" src="" alt="En attente..." style="display:none">
                         <div id="stream-placeholder" class="stream-placeholder">Entrez l'IP et cliquez Connecter</div>
                     </div>
                     <div class="action-bar">
-                        <button onclick="rotateImage()" class="pro-btn">↻ Rotation image</button>
-                        <button onclick="rotateScreen()" class="pro-btn">↺ Rotation écran</button>
-                        <button onclick="capturePhoto()" class="pro-btn">📸 Capture</button>
-                        <button id="btn-record" onclick="toggleRecord()" class="pro-btn btn-danger">🔴 Film</button>
+                        <button onclick="rotateStream()" class="pro-btn">↻ Rotation</button>
+                        <button onclick="capturePhoto()" class="pro-btn">📸 Capture HD</button>
+                        <button id="btn-record" onclick="toggleRecord()" class="pro-btn btn-danger">🔴 Enregistrer</button>
                     </div>
                 </div>
 
                 <div class="side-panel">
                     <!-- PTZ -->
                     <div class="pro-card">
-                        <div class="section-title">🎮 Pan / Tilt</div>
+                        <div class="section-title">🎮 Contrôle Pan / Tilt</div>
                         <div class="ptz-grid">
                             <div></div>
-                            <button class="ptz-btn ptz-arrow" onmousedown="ptzStart('V',-32)" onmouseup="ptzStop()" onmouseleave="ptzStop()" ontouchstart="ptzStart('V',-32)" ontouchend="ptzStop()">▲</button>
+                            <button class="ptz-btn ptz-arrow" 
+                                onmousedown="ptzStart('V', -32)" onmouseup="ptzStop()" onmouseleave="ptzStop()"
+                                ontouchstart="ptzStart('V', -32)" ontouchend="ptzStop()">▲</button>
                             <div></div>
-                            <button class="ptz-btn ptz-arrow" onmousedown="ptzStart('H',-32)" onmouseup="ptzStop()" onmouseleave="ptzStop()" ontouchstart="ptzStart('H',-32)" ontouchend="ptzStop()">◀ G</button>
+                            <button class="ptz-btn ptz-arrow" 
+                                onmousedown="ptzStart('H', -32)" onmouseup="ptzStop()" onmouseleave="ptzStop()"
+                                ontouchstart="ptzStart('H', -32)" ontouchend="ptzStop()">◀ Gauche</button>
                             <button class="ptz-btn ptz-home" onclick="sendCmd('HOME')">⌂ HOME</button>
-                            <button class="ptz-btn ptz-arrow" onmousedown="ptzStart('H',32)" onmouseup="ptzStop()" onmouseleave="ptzStop()" ontouchstart="ptzStart('H',32)" ontouchend="ptzStop()">D ▶</button>
+                            <button class="ptz-btn ptz-arrow" 
+                                onmousedown="ptzStart('H', 32)" onmouseup="ptzStop()" onmouseleave="ptzStop()"
+                                ontouchstart="ptzStart('H', 32)" ontouchend="ptzStop()">Droite ▶</button>
                             <div></div>
-                            <button class="ptz-btn ptz-arrow" onmousedown="ptzStart('V',32)" onmouseup="ptzStop()" onmouseleave="ptzStop()" ontouchstart="ptzStart('V',32)" ontouchend="ptzStop()">▼</button>
+                            <button class="ptz-btn ptz-arrow" 
+                                onmousedown="ptzStart('V', 32)" onmouseup="ptzStop()" onmouseleave="ptzStop()"
+                                ontouchstart="ptzStart('V', 32)" ontouchend="ptzStop()">▼</button>
                             <div></div>
                         </div>
                     </div>
 
-                    <!-- ZOOM / PAN -->
+                    <!-- MIROIRS -->
                     <div class="pro-card">
-                        <div class="section-title">🔍 Zoom & Position</div>
-                        <div class="range-group">
-                            <div class="range-labels"><span>Zoom</span><span id="val-zoom" class="value-display">100%</span></div>
-                            <input type="range" id="ctrl-zoom" class="pro-slider" min="50" max="300" value="${state.zoom}" oninput="updateZoom(this.value)">
-                        </div>
-                        <div class="range-group">
-                            <div class="range-labels"><span>Pan X</span><span id="val-panX" class="value-display">0%</span></div>
-                            <input type="range" id="ctrl-panX" class="pro-slider" min="-50" max="50" value="${state.panX}" oninput="updatePan('x', this.value)">
-                        </div>
-                        <div class="range-group">
-                            <div class="range-labels"><span>Pan Y</span><span id="val-panY" class="value-display">0%</span></div>
-                            <input type="range" id="ctrl-panY" class="pro-slider" min="-50" max="50" value="${state.panY}" oninput="updatePan('y', this.value)">
-                        </div>
-                    </div>
-
-                    <!-- MIROIRS ÉCRAN -->
-                    <div class="pro-card">
-                        <div class="section-title">🔃 Miroirs écran</div>
+                        <div class="section-title">🔃 Miroirs</div>
                         <div class="toggle-row">
                             <span class="label-text">Miroir Horizontal</span>
                             <label class="pro-switch">
-                                <input type="checkbox" id="mirror-h" ${state.mirrorH ? 'checked' : ''} onchange="toggleMirror('h', this.checked)">
+                                <input type="checkbox" id="mirror-h" onchange="toggleMirror('h', this.checked)">
                                 <span class="switch-slider"></span>
                             </label>
                         </div>
                         <div class="toggle-row">
                             <span class="label-text">Miroir Vertical</span>
                             <label class="pro-switch">
-                                <input type="checkbox" id="mirror-v" ${state.mirrorV ? 'checked' : ''} onchange="toggleMirror('v', this.checked)">
+                                <input type="checkbox" id="mirror-v" onchange="toggleMirror('v', this.checked)">
                                 <span class="switch-slider"></span>
                             </label>
                         </div>
                     </div>
 
-                    <!-- FILTRES -->
+                    <!-- IMAGE -->
                     <div class="pro-card">
-                        <div class="section-title">🎨 Filtres</div>
+                        <div class="section-title">🎨 Traitement d'image</div>
                         <div class="range-group">
-                            <div class="range-labels"><span>Luminosité</span><span id="val-brightness" class="value-display">${state.brightness}%</span></div>
-                            <input type="range" id="ctrl-brightness" class="pro-slider" min="0" max="200" value="${state.brightness}" oninput="updateFilter('brightness', this.value)">
+                            <div class="range-labels">
+                                <span>Luminosité</span>
+                                <span id="val-brightness" class="value-display">100%</span>
+                            </div>
+                            <input type="range" id="ctrl-brightness" class="pro-slider" min="0" max="200" value="100" oninput="updateFilter('brightness', this.value)">
                         </div>
                         <div class="range-group">
-                            <div class="range-labels"><span>Saturation</span><span id="val-saturation" class="value-display">${state.saturation}%</span></div>
-                            <input type="range" id="ctrl-saturation" class="pro-slider" min="0" max="200" value="${state.saturation}" oninput="updateFilter('saturation', this.value)">
+                            <div class="range-labels">
+                                <span>Saturation</span>
+                                <span id="val-saturation" class="value-display">100%</span>
+                            </div>
+                            <input type="range" id="ctrl-saturation" class="pro-slider" min="0" max="200" value="100" oninput="updateFilter('saturation', this.value)">
                         </div>
                         <div class="range-group">
-                            <div class="range-labels"><span>Contraste</span><span id="val-contrast" class="value-display">${state.contrast}%</span></div>
-                            <input type="range" id="ctrl-contrast" class="pro-slider" min="0" max="200" value="${state.contrast}" oninput="updateFilter('contrast', this.value)">
+                            <div class="range-labels">
+                                <span>Contraste</span>
+                                <span id="val-contrast" class="value-display">100%</span>
+                            </div>
+                            <input type="range" id="ctrl-contrast" class="pro-slider" min="0" max="200" value="100" oninput="updateFilter('contrast', this.value)">
                         </div>
                         <div class="mode-group">
-                            <button id="mode-normal" class="mode-btn ${state.mode=='normal'?'active':''}" onclick="setMode('normal')">Normal</button>
-                            <button id="mode-night" class="mode-btn ${state.mode=='night'?'active':''}" onclick="setMode('night')">Nuit</button>
-                            <button id="mode-yuv" class="mode-btn ${state.mode=='yuv'?'active':''}" onclick="setMode('yuv')">YUV</button>
-                            <button id="mode-surveillance" class="mode-btn ${state.mode=='surveillance'?'active':''}" onclick="setMode('surveillance')">Surv.</button>
+                            <button id="mode-normal" class="mode-btn active" onclick="setMode('normal')">Normal</button>
+                            <button id="mode-night" class="mode-btn" onclick="setMode('night')">Vision Nuit</button>
+                            <button id="mode-yuv" class="mode-btn" onclick="setMode('yuv')">Contraste YUV</button>
+                            <button id="mode-surveillance" class="mode-btn" onclick="setMode('surveillance')">Surveillance</button>
                         </div>
                     </div>
                 </div>
@@ -164,7 +154,7 @@ window.addEventListener('DOMContentLoaded', function() {
                         </div>
                     </div>
                     <div id="console-output" class="console-box">
-                        <div class="log-row sys">[SYS] Console initialisée</div>
+                        <div class="log-row sys">[SYS] Console PTZ initialisée</div>
                     </div>
                     <div class="console-input-bar">
                         <span class="prompt">&gt;</span>
@@ -172,23 +162,29 @@ window.addEventListener('DOMContentLoaded', function() {
                     </div>
                 </div>
                 <div class="commands-zone">
-                    <div class="panel-header"><span class="panel-title">📖 Commandes</span></div>
+                    <div class="panel-header">
+                        <span class="panel-title">📖 Commandes</span>
+                    </div>
                     <div class="command-list">
-                        <div class="cmd-item" onclick="executeCommand('home')"><span class="cmd-syntax">home</span><span class="cmd-desc">Recalage complet</span></div>
+                        <div class="cmd-item" onclick="executeCommand('home')"><span class="cmd-syntax">home</span><span class="cmd-desc">Recalage + centrage</span></div>
                         <div class="cmd-item" onclick="executeCommand('left')"><span class="cmd-syntax">left</span><span class="cmd-desc">Pan gauche</span></div>
                         <div class="cmd-item" onclick="executeCommand('right')"><span class="cmd-syntax">right</span><span class="cmd-desc">Pan droite</span></div>
                         <div class="cmd-item" onclick="executeCommand('up')"><span class="cmd-syntax">up</span><span class="cmd-desc">Tilt haut</span></div>
                         <div class="cmd-item" onclick="executeCommand('down')"><span class="cmd-syntax">down</span><span class="cmd-desc">Tilt bas</span></div>
-                        <div class="cmd-item" onclick="executeCommand('test')"><span class="cmd-syntax">test</span><span class="cmd-desc">Test moteurs brut</span></div>
                         <div class="cmd-item" onclick="executeCommand('status')"><span class="cmd-syntax">status</span><span class="cmd-desc">État système</span></div>
-                        <div class="cmd-item" onclick="executeCommand('clear')"><span class="cmd-syntax">clear</span><span class="cmd-desc">Effacer</span></div>
+                        <div class="cmd-item" onclick="executeCommand('clear')"><span class="cmd-syntax">clear</span><span class="cmd-desc">Effacer console</span></div>
                     </div>
                 </div>
             </div>
         </div>
     </div>`;
 
-    applyAllTransforms();
+    // Charger miroirs sauvegardés
+    filterState.mirrorH = localStorage.getItem('ptz_mirror_h') === 'true';
+    filterState.mirrorV = localStorage.getItem('ptz_mirror_v') === 'true';
+    document.getElementById('mirror-h').checked = filterState.mirrorH;
+    document.getElementById('mirror-v').checked = filterState.mirrorV;
+
     if (espIp) connectSystem();
 });
 
@@ -198,12 +194,12 @@ window.addEventListener('DOMContentLoaded', function() {
 function connectSystem() {
     const input = document.getElementById('esp-ip');
     espIp = input.value.trim();
-    if (!espIp) { logConsole("Entrez IP", "err"); return; }
-    saveState();
+    if (!espIp) { logConsole("Entrez une IP", "err"); return; }
+    localStorage.setItem('ptz_ip', espIp);
 
     const img = document.getElementById('video-stream');
     const placeholder = document.getElementById('stream-placeholder');
-    img.src = `http://${espIp}/stream?t=${Date.now()}`;
+    img.src = `http://${espIp}/stream`;
     img.style.display = 'block';
     placeholder.style.display = 'none';
 
@@ -211,13 +207,17 @@ function connectSystem() {
         .then(r => r.json())
         .then(d => {
             isConnected = true;
-            document.getElementById('conn-status').className = 'status-dot online';
-            logConsole(`Connecté: ${espIp} RSSI:${d.rssi}dBm`, "success");
+            updateStatus(true);
+            logConsole(`Connecté: ${espIp} | RSSI:${d.rssi}dBm`, "success");
         })
         .catch(e => {
-            document.getElementById('conn-status').className = 'status-dot offline';
+            updateStatus(false);
             logConsole("Connexion impossible", "err");
         });
+}
+
+function updateStatus(ok) {
+    document.getElementById('conn-status').className = ok ? 'status-dot online' : 'status-dot offline';
 }
 
 // ==========================================
@@ -246,74 +246,21 @@ function sendCmd(cmd) {
 }
 
 // ==========================================
-// ZOOM / PAN
-// ==========================================
-function updateZoom(value) {
-    state.zoom = parseInt(value);
-    document.getElementById('val-zoom').textContent = value + '%';
-    saveState();
-    applyAllTransforms();
-}
-
-function updatePan(axis, value) {
-    state['pan' + axis.toUpperCase()] = parseInt(value);
-    document.getElementById('val-pan' + axis.toUpperCase()).textContent = value + '%';
-    saveState();
-    applyAllTransforms();
-}
-
-// ==========================================
-// ROTATIONS
-// ==========================================
-function rotateImage() {
-    state.rotation = (state.rotation + 90) % 360;
-    saveState();
-    applyAllTransforms();
-}
-
-function rotateScreen() {
-    state.screenRotation = (state.screenRotation + 90) % 360;
-    saveState();
-    applyAllTransforms();
-}
-
-// ==========================================
-// MIROIRS ÉCRAN — Indépendants de la rotation image
+// MIROIRS
 // ==========================================
 function toggleMirror(axis, checked) {
-    if (axis === 'h') state.mirrorH = checked;
-    else state.mirrorV = checked;
-    saveState();
-    applyAllTransforms();
+    if (axis === 'h') filterState.mirrorH = checked;
+    else filterState.mirrorV = checked;
+    localStorage.setItem('ptz_mirror_' + axis, checked);
+    applyTransform();
 }
 
-// ==========================================
-// APPLICATION TRANSFORMATIONS
-// Ordre: zoom → pan → rotation écran → miroirs écran
-// ==========================================
-function applyAllTransforms() {
+function applyTransform() {
     const img = document.getElementById('video-stream');
     if (!img) return;
-
-    // 1. Zoom et pan (sur l'image)
-    const scale = state.zoom / 100;
-    const panX = state.panX;
-    const panY = state.panY;
-    
-    // 2. Rotation écran (appliquée au conteneur)
-    const viewport = document.getElementById('video-viewport');
-    if (viewport) {
-        viewport.style.transform = `rotate(${state.screenRotation}deg)`;
-    }
-    
-    // 3. Transform image: zoom + pan + rotation image
-    let transform = `scale(${scale}) translate(${panX}%, ${panY}%) rotate(${state.rotation}deg)`;
-    
-    // 4. Miroirs écran — appliqués APRÈS tout le reste
-    // Ce sont des flip CSS sur l'élément, indépendants de la rotation
-    if (state.mirrorH) transform += ' scaleX(-1)';
-    if (state.mirrorV) transform += ' scaleY(-1)';
-    
+    let transform = `rotate(${filterState.rotation}deg)`;
+    if (filterState.mirrorH) transform += ' scaleX(-1)';
+    if (filterState.mirrorV) transform += ' scaleY(-1)';
     img.style.transform = transform;
 }
 
@@ -321,17 +268,16 @@ function applyAllTransforms() {
 // FILTRES
 // ==========================================
 function updateFilter(type, value) {
-    state[type] = parseInt(value);
+    filterState[type] = parseInt(value);
     document.getElementById('val-' + type).textContent = value + '%';
-    saveState();
     applyFilters();
 }
 
 function applyFilters() {
     const img = document.getElementById('video-stream');
     if (!img) return;
-    let filter = `brightness(${state.brightness}%) saturate(${state.saturation}%) contrast(${state.contrast}%)`;
-    switch(state.mode) {
+    let filter = `brightness(${filterState.brightness}%) saturate(${filterState.saturation}%) contrast(${filterState.contrast}%)`;
+    switch(filterState.mode) {
         case 'night': filter += ' invert(1) hue-rotate(180deg) brightness(1.5)'; break;
         case 'yuv': filter += ' grayscale(100%) contrast(180%) brightness(1.2)'; break;
         case 'surveillance': filter += ' grayscale(100%) contrast(250%) brightness(0.9)'; break;
@@ -340,10 +286,10 @@ function applyFilters() {
 }
 
 function setMode(mode) {
-    state.mode = mode;
+    filterState.mode = mode;
     document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
     document.getElementById('mode-' + mode).classList.add('active');
-    
+
     switch(mode) {
         case 'night': setSlider('brightness', 150); setSlider('saturation', 80); setSlider('contrast', 120); break;
         case 'yuv': setSlider('brightness', 120); setSlider('saturation', 0); setSlider('contrast', 180); break;
@@ -351,9 +297,170 @@ function setMode(mode) {
         default: setSlider('brightness', 100); setSlider('saturation', 100); setSlider('contrast', 100); break;
     }
     applyFilters();
-    saveState();
 }
 
 function setSlider(type, value) {
-    state[type] = value;
-    const slider = document
+    filterState[type] = value;
+    const slider = document.getElementById('ctrl-' + type);
+    const display = document.getElementById('val-' + type);
+    if (slider) slider.value = value;
+    if (display) display.textContent = value + '%';
+}
+
+// ==========================================
+// ROTATION
+// ==========================================
+function rotateStream() {
+    filterState.rotation = (filterState.rotation + 90) % 360;
+    applyTransform();
+}
+
+// ==========================================
+// CAPTURE — avec filtres, rotation, miroirs
+// ==========================================
+// ... (dans capturePhoto et renderFrame, utiliser une résolution plus grande)
+
+function capturePhoto() {
+    const img = document.getElementById('video-stream');
+    if (!img.src || img.style.display === 'none') { logConsole("Flux non actif", "err"); return; }
+
+    // Canvas en résolution élevée pour la capture
+    const canvas = document.createElement('canvas');
+    canvas.width = 1600;   // ← Haute résolution capture
+    canvas.height = 1200;
+    const ctx = canvas.getContext('2d');
+
+    ctx.filter = img.style.filter || 'none';
+    ctx.save();
+    ctx.translate(canvas.width/2, canvas.height/2);
+    ctx.rotate(filterState.rotation * Math.PI / 180);
+    if (filterState.mirrorH) ctx.scale(-1, 1);
+    if (filterState.mirrorV) ctx.scale(1, -1);
+    // Dessiner l'image en la stretchant pour remplir
+    ctx.drawImage(img, -canvas.width/2, -canvas.height/2, canvas.width, canvas.height);
+    ctx.restore();
+
+    const a = document.createElement('a');
+    a.download = `S3PTZ_${Date.now()}.jpg`;
+    a.href = canvas.toDataURL('image/jpeg', 0.98);  // ← Qualité max 98%
+    a.click();
+    logConsole("Photo HD capturée (1600x1200)", "success");
+}
+// ==========================================
+// ENREGISTREMENT — avec filtres, rotation, miroirs
+// ==========================================
+function toggleRecord() {
+    const btn = document.getElementById('btn-record');
+    if (!isRecording) { startRecording(); btn.innerHTML = "⏹️ Arrêter"; btn.classList.add('recording'); }
+    else { stopRecording(); btn.innerHTML = "🔴 Enregistrer"; btn.classList.remove('recording'); }
+}
+
+function startRecording() {
+    const img = document.getElementById('video-stream');
+    if (!img.src || img.style.display === 'none') { logConsole("Flux non actif", "err"); return; }
+
+    recordCanvas = document.createElement('canvas');
+    recordCanvas.width = img.naturalWidth || 640;
+    recordCanvas.height = img.naturalHeight || 480;
+    recordCtx = recordCanvas.getContext('2d');
+
+    const stream = recordCanvas.captureStream(30);
+    mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9' });
+    const chunks = [];
+    mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+    mediaRecorder.onstop = () => {
+        const blob = new Blob(chunks, { type: 'video/webm' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `S3PTZ_RECORD_${Date.now()}.webm`;
+        a.click();
+        logConsole("Vidéo sauvegardée", "success");
+    };
+
+    mediaRecorder.start(100);
+    isRecording = true;
+    logConsole("Enregistrement démarré", "sys");
+    renderFrame();
+}
+
+function renderFrame() {
+    if (!isRecording || !recordCtx) return;
+    const img = document.getElementById('video-stream');
+
+    recordCtx.filter = img.style.filter || 'none';
+    recordCtx.save();
+    recordCtx.translate(recordCanvas.width/2, recordCanvas.height/2);
+    recordCtx.rotate(filterState.rotation * Math.PI / 180);
+    if (filterState.mirrorH) recordCtx.scale(-1, 1);
+    if (filterState.mirrorV) recordCtx.scale(1, -1);
+    recordCtx.drawImage(img, -recordCanvas.width/2, -recordCanvas.height/2);
+    recordCtx.restore();
+
+    requestAnimationFrame(renderFrame);
+}
+
+function stopRecording() {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+    isRecording = false; recordCanvas = null; recordCtx = null;
+    logConsole("Enregistrement arrêté", "sys");
+}
+
+// ==========================================
+// CONSOLE
+// ==========================================
+function logConsole(msg, type) {
+    const out = document.getElementById('console-output');
+    if (!out) return;
+    const row = document.createElement('div');
+    row.className = 'log-row ' + (type || '');
+    const time = new Date().toLocaleTimeString('fr-FR', {hour12:false});
+    row.textContent = `[${time}] ${msg}`;
+    out.appendChild(row);
+    out.scrollTop = out.scrollHeight;
+}
+
+function clearLogs() {
+    const out = document.getElementById('console-output');
+    if (out) out.innerHTML = '<div class="log-row sys">[SYS] Console effacée</div>';
+}
+
+function copyLogs() {
+    const out = document.getElementById('console-output');
+    if (!out) return;
+    const text = Array.from(out.querySelectorAll('.log-row')).map(r => r.textContent).join('\n');
+    navigator.clipboard.writeText(text).then(() => logConsole("Logs copiés", "success"));
+}
+
+function executeCommand(val) {
+    const input = document.getElementById('console-input');
+    const cmd = val.trim().toLowerCase();
+    input.value = '';
+    if (!cmd) return;
+
+    switch(cmd) {
+        case 'clear': clearLogs(); return;
+        case 'home': sendCmd('HOME'); logConsole("HOME envoyé", "cmd"); return;
+        case 'left': sendCmd('H:-32'); logConsole("Pan gauche", "cmd"); return;
+        case 'right': sendCmd('H:32'); logConsole("Pan droite", "cmd"); return;
+        case 'up': sendCmd('V:-32'); logConsole("Tilt haut", "cmd"); return;
+        case 'down': sendCmd('V:32'); logConsole("Tilt bas", "cmd"); return;
+        case 'status':
+            fetch(`http://${espIp}/status`).then(r=>r.json()).then(d=>{
+                logConsole(`IP:${d.ip} RSSI:${d.rssi}dBm Uptime:${d.uptime}s`, "sys");
+            });
+            return;
+        default: logConsole("Inconnu: " + cmd, "err");
+    }
+}
+
+function switchTab(tab) {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    if (tab === 'studio') {
+        document.getElementById('nav-studio').classList.add('active');
+        document.getElementById('tab-studio').classList.add('active');
+    } else {
+        document.getElementById('nav-terminal').classList.add('active');
+        document.getElementById('tab-terminal').classList.add('active');
+    }
+}
