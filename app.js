@@ -1,10 +1,10 @@
 // ==========================================
-// S3-PRO PTZ — APP.JS
-// Miroirs H/V, filtres corrigés, sliders synchronisés
+// S3-PRO PTZ — APP.JS v2.0
+// Communication corrigée | Gestion erreurs | Reconnexion auto
 // ==========================================
 
 var espIp = window.location.hostname;
-if (!espIp || espIp === "localhost" || espIp.includes("github.io")) {
+if (!espIp || espIp === "localhost" || espIp.includes("github.io") || espIp === "") {
     espIp = localStorage.getItem('ptz_ip') || '';
 }
 
@@ -14,6 +14,7 @@ var ptzInterval = null;
 var mediaRecorder = null;
 var recordCanvas = null;
 var recordCtx = null;
+var streamImg = null;
 
 // État filtres
 var filterState = {
@@ -61,6 +62,7 @@ window.addEventListener('DOMContentLoaded', function() {
                         <button onclick="rotateStream()" class="pro-btn">↻ Rotation</button>
                         <button onclick="capturePhoto()" class="pro-btn">📸 Capture HD</button>
                         <button id="btn-record" onclick="toggleRecord()" class="pro-btn btn-danger">🔴 Enregistrer</button>
+                        <button onclick="sendCmd('HOME')" class="pro-btn btn-primary">🏠 HOME</button>
                     </div>
                 </div>
 
@@ -72,19 +74,19 @@ window.addEventListener('DOMContentLoaded', function() {
                             <div></div>
                             <button class="ptz-btn ptz-arrow" 
                                 onmousedown="ptzStart('V', -32)" onmouseup="ptzStop()" onmouseleave="ptzStop()"
-                                ontouchstart="ptzStart('V', -32)" ontouchend="ptzStop()">▲</button>
+                                ontouchstart="ptzStart('V', -32)" ontouchend="ptzStop()">▲ Haut</button>
                             <div></div>
                             <button class="ptz-btn ptz-arrow" 
                                 onmousedown="ptzStart('H', -32)" onmouseup="ptzStop()" onmouseleave="ptzStop()"
                                 ontouchstart="ptzStart('H', -32)" ontouchend="ptzStop()">◀ Gauche</button>
-                            <button class="ptz-btn ptz-home" onclick="sendCmd('HOME')">⌂ HOME</button>
+                            <button class="ptz-btn ptz-home" onclick="sendCmd('CENTER')">⌂ CENTRE</button>
                             <button class="ptz-btn ptz-arrow" 
                                 onmousedown="ptzStart('H', 32)" onmouseup="ptzStop()" onmouseleave="ptzStop()"
                                 ontouchstart="ptzStart('H', 32)" ontouchend="ptzStop()">Droite ▶</button>
                             <div></div>
                             <button class="ptz-btn ptz-arrow" 
                                 onmousedown="ptzStart('V', 32)" onmouseup="ptzStop()" onmouseleave="ptzStop()"
-                                ontouchstart="ptzStart('V', 32)" ontouchend="ptzStop()">▼</button>
+                                ontouchstart="ptzStart('V', 32)" ontouchend="ptzStop()">▼ Bas</button>
                             <div></div>
                         </div>
                     </div>
@@ -154,7 +156,7 @@ window.addEventListener('DOMContentLoaded', function() {
                         </div>
                     </div>
                     <div id="console-output" class="console-box">
-                        <div class="log-row sys">[SYS] Console PTZ initialisée</div>
+                        <div class="log-row sys">[SYS] Console PTZ v2.0 initialisée</div>
                     </div>
                     <div class="console-input-bar">
                         <span class="prompt">&gt;</span>
@@ -166,12 +168,13 @@ window.addEventListener('DOMContentLoaded', function() {
                         <span class="panel-title">📖 Commandes</span>
                     </div>
                     <div class="command-list">
-                        <div class="cmd-item" onclick="executeCommand('home')"><span class="cmd-syntax">home</span><span class="cmd-desc">Recalage + centrage</span></div>
-                        <div class="cmd-item" onclick="executeCommand('left')"><span class="cmd-syntax">left</span><span class="cmd-desc">Pan gauche</span></div>
-                        <div class="cmd-item" onclick="executeCommand('right')"><span class="cmd-syntax">right</span><span class="cmd-desc">Pan droite</span></div>
-                        <div class="cmd-item" onclick="executeCommand('up')"><span class="cmd-syntax">up</span><span class="cmd-desc">Tilt haut</span></div>
-                        <div class="cmd-item" onclick="executeCommand('down')"><span class="cmd-syntax">down</span><span class="cmd-desc">Tilt bas</span></div>
-                        <div class="cmd-item" onclick="executeCommand('status')"><span class="cmd-syntax">status</span><span class="cmd-desc">État système</span></div>
+                        <div class="cmd-item" onclick="executeCommand('home')"><span class="cmd-syntax">home</span><span class="cmd-desc">Recalage complet + centrage</span></div>
+                        <div class="cmd-item" onclick="executeCommand('center')"><span class="cmd-syntax">center</span><span class="cmd-desc">Aller au centre</span></div>
+                        <div class="cmd-item" onclick="executeCommand('left')"><span class="cmd-syntax">left</span><span class="cmd-desc">Pan gauche rapide</span></div>
+                        <div class="cmd-item" onclick="executeCommand('right')"><span class="cmd-syntax">right</span><span class="cmd-desc">Pan droite rapide</span></div>
+                        <div class="cmd-item" onclick="executeCommand('up')"><span class="cmd-syntax">up</span><span class="cmd-desc">Tilt haut rapide</span></div>
+                        <div class="cmd-item" onclick="executeCommand('down')"><span class="cmd-syntax">down</span><span class="cmd-desc">Tilt bas rapide</span></div>
+                        <div class="cmd-item" onclick="executeCommand('status')"><span class="cmd-syntax">status</span><span class="cmd-desc">État système complet</span></div>
                         <div class="cmd-item" onclick="executeCommand('clear')"><span class="cmd-syntax">clear</span><span class="cmd-desc">Effacer console</span></div>
                     </div>
                 </div>
@@ -179,12 +182,13 @@ window.addEventListener('DOMContentLoaded', function() {
         </div>
     </div>`;
 
-    // Charger miroirs sauvegardés
+    // Restaurer état
     filterState.mirrorH = localStorage.getItem('ptz_mirror_h') === 'true';
     filterState.mirrorV = localStorage.getItem('ptz_mirror_v') === 'true';
     document.getElementById('mirror-h').checked = filterState.mirrorH;
     document.getElementById('mirror-v').checked = filterState.mirrorV;
-
+    
+    streamImg = document.getElementById('video-stream');
     if (espIp) connectSystem();
 });
 
@@ -199,20 +203,34 @@ function connectSystem() {
 
     const img = document.getElementById('video-stream');
     const placeholder = document.getElementById('stream-placeholder');
-    img.src = `http://${espIp}/stream`;
+    
+    // Anti-cache avec timestamp
+    img.src = `http://${espIp}/stream?t=${Date.now()}`;
     img.style.display = 'block';
     placeholder.style.display = 'none';
+    
+    // Gestion erreur stream
+    img.onerror = function() {
+        updateStatus(false);
+        logConsole("Stream erreur - reconnexion...", "err");
+        setTimeout(connectSystem, 3000);
+    };
+    
+    img.onload = function() {
+        updateStatus(true);
+        logConsole("Stream actif", "success");
+    };
 
-    fetch(`http://${espIp}/status`, {mode: 'cors'})
-        .then(r => r.json())
+    fetch(`http://${espIp}/status`, {mode: 'cors', cache: 'no-cache'})
+        .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
         .then(d => {
             isConnected = true;
             updateStatus(true);
-            logConsole(`Connecté: ${espIp} | RSSI:${d.rssi}dBm`, "success");
+            logConsole(`Connecté: ${espIp} | RSSI:${d.rssi}dBm | Uptime:${d.uptime}s`, "success");
         })
         .catch(e => {
             updateStatus(false);
-            logConsole("Connexion impossible", "err");
+            logConsole("Connexion API impossible: " + e.message, "err");
         });
 }
 
@@ -221,12 +239,14 @@ function updateStatus(ok) {
 }
 
 // ==========================================
-// PTZ
+// PTZ — Corrigé avec gestion d'erreur
 // ==========================================
 function ptzStart(axis, steps) {
     if (!isConnected) { logConsole("Non connecté", "err"); return; }
     sendCmd(axis + ":" + steps);
-    ptzInterval = setInterval(() => sendCmd(axis + ":" + steps), 400);
+    ptzInterval = setInterval(() => {
+        if (isConnected) sendCmd(axis + ":" + steps);
+    }, 400);
 }
 
 function ptzStop() {
@@ -234,19 +254,28 @@ function ptzStop() {
 }
 
 function sendCmd(cmd) {
-    if (!espIp) return;
+    if (!espIp) { logConsole("IP non définie", "err"); return; }
+    
     fetch(`http://${espIp}/cmd`, {
         method: 'POST',
         mode: 'cors',
         headers: {'Content-Type': 'text/plain'},
-        body: cmd
+        body: cmd,
+        cache: 'no-cache'
     })
-    .then(r => { if (r.ok) logConsole("> " + cmd, "cmd"); })
-    .catch(e => logConsole("Erreur: " + e, "err"));
+    .then(r => {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        logConsole("> " + cmd, "cmd");
+    })
+    .catch(e => {
+        logConsole("Erreur cmd: " + e.message, "err");
+        isConnected = false;
+        updateStatus(false);
+    });
 }
 
 // ==========================================
-// MIROIRS
+// MIROIRS & FILTRES
 // ==========================================
 function toggleMirror(axis, checked) {
     if (axis === 'h') filterState.mirrorH = checked;
@@ -264,9 +293,6 @@ function applyTransform() {
     img.style.transform = transform;
 }
 
-// ==========================================
-// FILTRES
-// ==========================================
 function updateFilter(type, value) {
     filterState[type] = parseInt(value);
     document.getElementById('val-' + type).textContent = value + '%';
@@ -289,7 +315,6 @@ function setMode(mode) {
     filterState.mode = mode;
     document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
     document.getElementById('mode-' + mode).classList.add('active');
-
     switch(mode) {
         case 'night': setSlider('brightness', 150); setSlider('saturation', 80); setSlider('contrast', 120); break;
         case 'yuv': setSlider('brightness', 120); setSlider('saturation', 0); setSlider('contrast', 180); break;
@@ -307,26 +332,20 @@ function setSlider(type, value) {
     if (display) display.textContent = value + '%';
 }
 
-// ==========================================
-// ROTATION
-// ==========================================
 function rotateStream() {
     filterState.rotation = (filterState.rotation + 90) % 360;
     applyTransform();
 }
 
 // ==========================================
-// CAPTURE — avec filtres, rotation, miroirs
+// CAPTURE PHOTO
 // ==========================================
-// ... (dans capturePhoto et renderFrame, utiliser une résolution plus grande)
-
 function capturePhoto() {
     const img = document.getElementById('video-stream');
     if (!img.src || img.style.display === 'none') { logConsole("Flux non actif", "err"); return; }
 
-    // Canvas en résolution élevée pour la capture
     const canvas = document.createElement('canvas');
-    canvas.width = 1600;   // ← Haute résolution capture
+    canvas.width = 1600;
     canvas.height = 1200;
     const ctx = canvas.getContext('2d');
 
@@ -336,18 +355,18 @@ function capturePhoto() {
     ctx.rotate(filterState.rotation * Math.PI / 180);
     if (filterState.mirrorH) ctx.scale(-1, 1);
     if (filterState.mirrorV) ctx.scale(1, -1);
-    // Dessiner l'image en la stretchant pour remplir
     ctx.drawImage(img, -canvas.width/2, -canvas.height/2, canvas.width, canvas.height);
     ctx.restore();
 
     const a = document.createElement('a');
-    a.download = `S3PTZ_${Date.now()}.jpg`;
-    a.href = canvas.toDataURL('image/jpeg', 0.98);  // ← Qualité max 98%
+    a.download = `S3PTZ_${new Date().toISOString().replace(/[:.]/g,'-')}.jpg`;
+    a.href = canvas.toDataURL('image/jpeg', 0.95);
     a.click();
-    logConsole("Photo HD capturée (1600x1200)", "success");
+    logConsole("Photo HD capturée", "success");
 }
+
 // ==========================================
-// ENREGISTREMENT — avec filtres, rotation, miroirs
+// ENREGISTREMENT VIDÉO
 // ==========================================
 function toggleRecord() {
     const btn = document.getElementById('btn-record');
@@ -386,6 +405,7 @@ function startRecording() {
 function renderFrame() {
     if (!isRecording || !recordCtx) return;
     const img = document.getElementById('video-stream');
+    if (!img.complete) { requestAnimationFrame(renderFrame); return; }
 
     recordCtx.filter = img.style.filter || 'none';
     recordCtx.save();
@@ -440,14 +460,15 @@ function executeCommand(val) {
     switch(cmd) {
         case 'clear': clearLogs(); return;
         case 'home': sendCmd('HOME'); logConsole("HOME envoyé", "cmd"); return;
-        case 'left': sendCmd('H:-32'); logConsole("Pan gauche", "cmd"); return;
-        case 'right': sendCmd('H:32'); logConsole("Pan droite", "cmd"); return;
-        case 'up': sendCmd('V:-32'); logConsole("Tilt haut", "cmd"); return;
-        case 'down': sendCmd('V:32'); logConsole("Tilt bas", "cmd"); return;
+        case 'center': sendCmd('CENTER'); logConsole("CENTER envoyé", "cmd"); return;
+        case 'left': sendCmd('H:-64'); logConsole("Pan gauche rapide", "cmd"); return;
+        case 'right': sendCmd('H:64'); logConsole("Pan droite rapide", "cmd"); return;
+        case 'up': sendCmd('V:-64'); logConsole("Tilt haut rapide", "cmd"); return;
+        case 'down': sendCmd('V:64'); logConsole("Tilt bas rapide", "cmd"); return;
         case 'status':
-            fetch(`http://${espIp}/status`).then(r=>r.json()).then(d=>{
-                logConsole(`IP:${d.ip} RSSI:${d.rssi}dBm Uptime:${d.uptime}s`, "sys");
-            });
+            fetch(`http://${espIp}/status`, {mode:'cors'}).then(r=>r.json()).then(d=>{
+                logConsole(`IP:${d.ip} RSSI:${d.rssi}dBm Uptime:${d.uptime}s Stream:${d.stream_active?'ON':'OFF'}`, "sys");
+            }).catch(e=>logConsole("Erreur status: "+e.message, "err"));
             return;
         default: logConsole("Inconnu: " + cmd, "err");
     }
