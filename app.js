@@ -1,6 +1,6 @@
 // ==========================================
-// S3-PRO PTZ — APP.JS v3.0
-// Pas adaptatif | Filtres pro | Capture HD native | Logs UART dans console
+// S3-PRO PTZ — APP.JS v3.1
+// Moteurs fluides | Capture HD fixée | Onglet paramètres | Enregistrement corrigé
 // ==========================================
 
 var espIp = window.location.hostname;
@@ -16,7 +16,7 @@ var isHolding = false;
 var mediaRecorder = null;
 var recordCanvas = null;
 var recordCtx = null;
-var uartLogs = []; // Buffer logs UART
+var recordInterval = null;
 
 var filterState = {
     brightness: 100,
@@ -48,6 +48,7 @@ window.addEventListener('DOMContentLoaded', function() {
 
         <div class="tabs-nav">
             <button id="nav-studio" class="tab-btn active" onclick="switchTab('studio')">🎬 Studio Live</button>
+            <button id="nav-params" class="tab-btn" onclick="switchTab('params')">⚙️ Paramètres</button>
             <button id="nav-terminal" class="tab-btn" onclick="switchTab('terminal')">📟 Terminal</button>
         </div>
 
@@ -61,7 +62,8 @@ window.addEventListener('DOMContentLoaded', function() {
                     </div>
                     <div class="action-bar">
                         <button onclick="rotateStream()" class="pro-btn">↻ Rotation</button>
-                        <button onclick="captureHD()" class="pro-btn btn-primary">📸 Capture HD Native</button>
+                        <button onclick="captureHD()" class="pro-btn btn-primary">📸 Capture HD</button>
+                        <button onclick="capturePhoto()" class="pro-btn btn-primary">📷 Photo</button>
                         <button id="btn-record" onclick="toggleRecord()" class="pro-btn btn-danger">🔴 Enregistrer</button>
                         <button onclick="sendCmd('HOME')" class="pro-btn">🏠 HOME</button>
                     </div>
@@ -114,7 +116,7 @@ window.addEventListener('DOMContentLoaded', function() {
                                 <span>Qualité (4=meilleur, 63=pire)</span>
                                 <span id="val-quality" class="value-display">12</span>
                             </div>
-                            <input type="range" id="ctrl-quality" class="pro-slider" min="4" max="40" value="12" 
+                            <input type="range" id="ctrl-quality" class="pro-slider" min="4" max="63" value="12" 
                                 oninput="updateQuality(this.value)" onchange="setQuality(this.value)">
                         </div>
                     </div>
@@ -173,6 +175,61 @@ window.addEventListener('DOMContentLoaded', function() {
             </div>
         </div>
 
+        <div id="tab-params" class="tab-content">
+            <div class="params-grid">
+                <div class="pro-card">
+                    <div class="section-title">📷 Paramètres Caméra (appliqués sur l'ESP)</div>
+                    <div class="range-group">
+                        <div class="range-labels">
+                            <span>Luminosité capteur (-2 à +2)</span>
+                            <span id="val-cam-brightness" class="value-display">1</span>
+                        </div>
+                        <input type="range" id="cam-brightness" class="pro-slider" min="-2" max="2" value="1" 
+                            oninput="document.getElementById('val-cam-brightness').textContent=this.value">
+                    </div>
+                    <div class="range-group">
+                        <div class="range-labels">
+                            <span>Contraste capteur (-2 à +2)</span>
+                            <span id="val-cam-contrast" class="value-display">1</span>
+                        </div>
+                        <input type="range" id="cam-contrast" class="pro-slider" min="-2" max="2" value="1"
+                            oninput="document.getElementById('val-cam-contrast').textContent=this.value">
+                    </div>
+                    <div class="range-group">
+                        <div class="range-labels">
+                            <span>Saturation capteur (-2 à +2)</span>
+                            <span id="val-cam-saturation" class="value-display">1</span>
+                        </div>
+                        <input type="range" id="cam-saturation" class="pro-slider" min="-2" max="2" value="1"
+                            oninput="document.getElementById('val-cam-saturation').textContent=this.value">
+                    </div>
+                    <div class="range-group">
+                        <div class="range-labels">
+                            <span>Netteté capteur (-2 à +2)</span>
+                            <span id="val-cam-sharpness" class="value-display">2</span>
+                        </div>
+                        <input type="range" id="cam-sharpness" class="pro-slider" min="-2" max="2" value="2"
+                            oninput="document.getElementById('val-cam-sharpness').textContent=this.value">
+                    </div>
+                    <button onclick="applyCameraParams()" class="pro-btn btn-primary" style="width:100%;margin-top:12px;">
+                        ✓ Appliquer les paramètres caméra
+                    </button>
+                </div>
+                
+                <div class="pro-card">
+                    <div class="section-title">ℹ️ Informations</div>
+                    <p style="color:var(--text-muted);font-size:13px;line-height:1.6;">
+                        Les paramètres ci-contre sont envoyés directement au capteur OV2640.<br><br>
+                        <strong>Luminosité :</strong> Exposition globale<br>
+                        <strong>Contraste :</strong> Différence clair/foncé<br>
+                        <strong>Saturation :</strong> Intensité des couleurs<br>
+                        <strong>Netteté :</strong> Accentuation des contours<br><br>
+                        Le stream redémarre automatiquement après application.
+                    </p>
+                </div>
+            </div>
+        </div>
+
         <div id="tab-terminal" class="tab-content">
             <div class="terminal-layout">
                 <div class="terminal-zone">
@@ -181,12 +238,12 @@ window.addEventListener('DOMContentLoaded', function() {
                         <div class="header-actions">
                             <button onclick="copyLogs()" class="pro-btn btn-small">📋 Copier</button>
                             <button onclick="clearLogs()" class="pro-btn btn-small">🗑 Effacer</button>
-                            <button onclick="fetchUartLogs()" class="pro-btn btn-small">🔄 Sync UART</button>
+                            <button onclick="executeCommand('status')" class="pro-btn btn-small">🔄 Status</button>
                         </div>
                     </div>
                     <div id="console-output" class="console-box">
-                        <div class="log-row sys">[SYS] Console PTZ v3.0 initialisée</div>
-                        <div class="log-row sys">[SYS] Les logs UART apparaissent ici automatiquement</div>
+                        <div class="log-row sys">[SYS] Console PTZ v3.1 initialisée</div>
+                        <div class="log-row sys">[SYS] Moteurs fluides | Accélération trapézoïdale</div>
                     </div>
                     <div class="console-input-bar">
                         <span class="prompt">&gt;</span>
@@ -199,7 +256,7 @@ window.addEventListener('DOMContentLoaded', function() {
                     </div>
                     <div class="command-list">
                         <div class="cmd-item" onclick="executeCommand('home')"><span class="cmd-syntax">home</span><span class="cmd-desc">Recalage complet</span></div>
-                        <div class="cmd-item" onclick="executeCommand('center')"><span class="cmd-syntax">center</span><span class="cmd-desc">Position 3/4 (vue)</span></div>
+                        <div class="cmd-item" onclick="executeCommand('center')"><span class="cmd-syntax">center</span><span class="cmd-desc">Position 1/4 (vue)</span></div>
                         <div class="cmd-item" onclick="executeCommand('left')"><span class="cmd-syntax">left</span><span class="cmd-desc">Pan gauche</span></div>
                         <div class="cmd-item" onclick="executeCommand('right')"><span class="cmd-syntax">right</span><span class="cmd-desc">Pan droite</span></div>
                         <div class="cmd-item" onclick="executeCommand('up')"><span class="cmd-syntax">up</span><span class="cmd-desc">Tilt haut</span></div>
@@ -220,7 +277,7 @@ window.addEventListener('DOMContentLoaded', function() {
 });
 
 // ==========================================
-// CONNEXION & LOGS UART
+// CONNEXION
 // ==========================================
 function connectSystem() {
     const input = document.getElementById('esp-ip');
@@ -262,24 +319,23 @@ function updateStatus(ok) {
 }
 
 // ==========================================
-// PTZ ADAPTATIF: clic = gros pas, maintien = petits pas rapides
+// PTZ FLUIDE
 // ==========================================
 function ptzPress(axis, steps) {
     if (!isConnected) { logConsole("Non connecté", "err"); return; }
     isHolding = false;
     
-    // Premier pas: gros (32)
+    // Premier pas immédiat
     sendCmd(axis + ":" + steps);
     
-    // Après 300ms, si on maintient, on passe en mode fin
+    // Après 250ms, mode fin continu
     ptzHoldTimer = setTimeout(() => {
         isHolding = true;
-        // Pas fin de 8, toutes les 150ms
         ptzInterval = setInterval(() => {
             let fineSteps = steps > 0 ? 8 : -8;
             sendCmd(axis + ":" + fineSteps);
-        }, 150);
-    }, 300);
+        }, 120); // Plus rapide que 150ms
+    }, 250);
 }
 
 function ptzRelease() {
@@ -309,13 +365,21 @@ function sendCmd(cmd) {
 // ==========================================
 function setResolution(res) {
     if (!espIp) { logConsole("IP non définie", "err"); return; }
+    logConsole("Changement résolution: " + res + "...", "sys");
     fetch(`http://${espIp}/setres`, {
         method: 'POST', mode: 'cors',
         headers: {'Content-Type': 'text/plain'},
         body: res, cache: 'no-cache'
     })
     .then(r => r.text())
-    .then(t => logConsole("Résolution: " + res + " | " + t, "success"))
+    .then(t => {
+        logConsole("Résolution: " + res + " | " + t, "success");
+        // Reconnexion stream après changement
+        setTimeout(() => {
+            const img = document.getElementById('video-stream');
+            img.src = `http://${espIp}/stream?t=${Date.now()}`;
+        }, 1000);
+    })
     .catch(e => logConsole("Erreur résolution: " + e.message, "err"));
 }
 
@@ -331,13 +395,74 @@ function setQuality(val) {
         body: val, cache: 'no-cache'
     })
     .then(r => r.text())
-    .then(t => logConsole("Qualité JPEG: " + val, "success"))
+    .then(t => {
+        logConsole("Qualité JPEG: " + val, "success");
+        // Reconnexion stream
+        setTimeout(() => {
+            const img = document.getElementById('video-stream');
+            img.src = `http://${espIp}/stream?t=${Date.now()}`;
+        }, 1000);
+    })
     .catch(e => logConsole("Erreur qualité: " + e.message, "err"));
 }
 
 // ==========================================
-// CAPTURE HD NATIVE (pas de rognage)
+// PARAMÈTRES CAMÉRA AVANCÉS
 // ==========================================
+function applyCameraParams() {
+    if (!espIp) { logConsole("IP non définie", "err"); return; }
+    
+    const b = document.getElementById('cam-brightness').value;
+    const c = document.getElementById('cam-contrast').value;
+    const s = document.getElementById('cam-saturation').value;
+    const sh = document.getElementById('cam-sharpness').value;
+    
+    const params = `brightness:${b}|contrast:${c}|saturation:${s}|sharpness:${sh}`;
+    
+    logConsole("Application paramètres caméra...", "sys");
+    fetch(`http://${espIp}/setparams`, {
+        method: 'POST', mode: 'cors',
+        headers: {'Content-Type': 'text/plain'},
+        body: params, cache: 'no-cache'
+    })
+    .then(r => r.text())
+    .then(t => {
+        logConsole("Paramètres appliqués: " + t, "success");
+        // Reconnexion stream
+        setTimeout(() => {
+            const img = document.getElementById('video-stream');
+            img.src = `http://${espIp}/stream?t=${Date.now()}`;
+        }, 1500);
+    })
+    .catch(e => logConsole("Erreur paramètres: " + e.message, "err"));
+}
+
+// ==========================================
+// CAPTURES PHOTO & HD
+// ==========================================
+function capturePhoto() {
+    if (!espIp) { logConsole("IP non définie", "err"); return; }
+    logConsole("Capture photo en cours...", "sys");
+    
+    fetch(`http://${espIp}/capture`, {
+        method: 'GET', mode: 'cors', cache: 'no-cache'
+    })
+    .then(r => {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.blob();
+    })
+    .then(blob => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `S3PTZ_${Date.now()}.jpg`;
+        a.click();
+        URL.revokeObjectURL(url);
+        logConsole("Photo sauvegardée!", "success");
+    })
+    .catch(e => logConsole("Erreur photo: " + e.message, "err"));
+}
+
 function captureHD() {
     if (!espIp) { logConsole("IP non définie", "err"); return; }
     logConsole("Capture HD native en cours...", "sys");
@@ -362,7 +487,68 @@ function captureHD() {
 }
 
 // ==========================================
-// MIROIRS & FILTRES PRO
+// ENREGISTREMENT VIDÉO (corrigé avec fetch images)
+// ==========================================
+function toggleRecord() {
+    const btn = document.getElementById('btn-record');
+    if (!isRecording) { startRecording(); btn.innerHTML = "⏹️ Arrêter"; btn.classList.add('recording'); }
+    else { stopRecording(); btn.innerHTML = "🔴 Enregistrer"; btn.classList.remove('recording'); }
+}
+
+function startRecording() {
+    const img = document.getElementById('video-stream');
+    if (!img.src || img.style.display === 'none') { logConsole("Flux non actif", "err"); return; }
+    
+    // Création canvas
+    recordCanvas = document.createElement('canvas');
+    recordCanvas.width = 640;
+    recordCanvas.height = 480;
+    recordCtx = recordCanvas.getContext('2d');
+    
+    const stream = recordCanvas.captureStream(15); // 15 FPS
+    mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9' });
+    const chunks = [];
+    
+    mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+    mediaRecorder.onstop = () => {
+        const blob = new Blob(chunks, { type: 'video/webm' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `S3PTZ_RECORD_${Date.now()}.webm`;
+        a.click();
+        logConsole("Vidéo sauvegardée", "success");
+    };
+    
+    mediaRecorder.start(200);
+    isRecording = true;
+    logConsole("Enregistrement démarré (15 FPS)", "sys");
+    
+    // Boucle de rendu
+    recordInterval = setInterval(() => {
+        if (!recordCtx || !img.complete) return;
+        recordCtx.filter = img.style.filter || 'none';
+        recordCtx.save();
+        recordCtx.translate(recordCanvas.width/2, recordCanvas.height/2);
+        recordCtx.rotate(filterState.rotation * Math.PI / 180);
+        if (filterState.mirrorH) recordCtx.scale(-1, 1);
+        if (filterState.mirrorV) recordCtx.scale(1, -1);
+        recordCtx.drawImage(img, -recordCanvas.width/2, -recordCanvas.height/2);
+        recordCtx.restore();
+    }, 66); // ~15 FPS
+}
+
+function stopRecording() {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+    if (recordInterval) clearInterval(recordInterval);
+    isRecording = false;
+    recordCanvas = null;
+    recordCtx = null;
+    recordInterval = null;
+    logConsole("Enregistrement arrêté", "sys");
+}
+
+// ==========================================
+// MIROIRS & FILTRES
 // ==========================================
 function toggleMirror(axis, checked) {
     if (axis === 'h') filterState.mirrorH = checked;
@@ -391,15 +577,9 @@ function applyFilters() {
     if (!img) return;
     let filter = `brightness(${filterState.brightness}%) saturate(${filterState.saturation}%) contrast(${filterState.contrast}%)`;
     switch(filterState.mode) {
-        case 'night': 
-            filter += ' grayscale(100%) brightness(180%) contrast(150%)'; 
-            break;
-        case 'thermal': 
-            filter += ' grayscale(100%) sepia(100%) hue-rotate(-50deg) saturate(300%) contrast(180%) brightness(120%)'; 
-            break;
-        case 'surveillance': 
-            filter += ' grayscale(100%) contrast(300%) brightness(80%)'; 
-            break;
+        case 'night': filter += ' grayscale(100%) brightness(180%) contrast(150%)'; break;
+        case 'thermal': filter += ' grayscale(100%) sepia(100%) hue-rotate(-50deg) saturate(300%) contrast(180%) brightness(120%)'; break;
+        case 'surveillance': filter += ' grayscale(100%) contrast(300%) brightness(80%)'; break;
     }
     img.style.filter = filter;
 }
@@ -409,18 +589,10 @@ function setMode(mode) {
     document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
     document.getElementById('mode-' + mode).classList.add('active');
     switch(mode) {
-        case 'night': 
-            setSlider('brightness', 180); setSlider('saturation', 0); setSlider('contrast', 150); 
-            break;
-        case 'thermal': 
-            setSlider('brightness', 120); setSlider('saturation', 300); setSlider('contrast', 180); 
-            break;
-        case 'surveillance': 
-            setSlider('brightness', 80); setSlider('saturation', 0); setSlider('contrast', 300); 
-            break;
-        default: 
-            setSlider('brightness', 100); setSlider('saturation', 100); setSlider('contrast', 100); 
-            break;
+        case 'night': setSlider('brightness', 180); setSlider('saturation', 0); setSlider('contrast', 150); break;
+        case 'thermal': setSlider('brightness', 120); setSlider('saturation', 300); setSlider('contrast', 180); break;
+        case 'surveillance': setSlider('brightness', 80); setSlider('saturation', 0); setSlider('contrast', 300); break;
+        default: setSlider('brightness', 100); setSlider('saturation', 100); setSlider('contrast', 100); break;
     }
     applyFilters();
 }
@@ -439,62 +611,7 @@ function rotateStream() {
 }
 
 // ==========================================
-// ENREGISTREMENT VIDÉO
-// ==========================================
-function toggleRecord() {
-    const btn = document.getElementById('btn-record');
-    if (!isRecording) { startRecording(); btn.innerHTML = "⏹️ Arrêter"; btn.classList.add('recording'); }
-    else { stopRecording(); btn.innerHTML = "🔴 Enregistrer"; btn.classList.remove('recording'); }
-}
-
-function startRecording() {
-    const img = document.getElementById('video-stream');
-    if (!img.src || img.style.display === 'none') { logConsole("Flux non actif", "err"); return; }
-    recordCanvas = document.createElement('canvas');
-    recordCanvas.width = img.naturalWidth || 640;
-    recordCanvas.height = img.naturalHeight || 480;
-    recordCtx = recordCanvas.getContext('2d');
-    const stream = recordCanvas.captureStream(30);
-    mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9' });
-    const chunks = [];
-    mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
-    mediaRecorder.onstop = () => {
-        const blob = new Blob(chunks, { type: 'video/webm' });
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = `S3PTZ_RECORD_${Date.now()}.webm`;
-        a.click();
-        logConsole("Vidéo sauvegardée", "success");
-    };
-    mediaRecorder.start(100);
-    isRecording = true;
-    logConsole("Enregistrement démarré", "sys");
-    renderFrame();
-}
-
-function renderFrame() {
-    if (!isRecording || !recordCtx) return;
-    const img = document.getElementById('video-stream');
-    if (!img.complete) { requestAnimationFrame(renderFrame); return; }
-    recordCtx.filter = img.style.filter || 'none';
-    recordCtx.save();
-    recordCtx.translate(recordCanvas.width/2, recordCanvas.height/2);
-    recordCtx.rotate(filterState.rotation * Math.PI / 180);
-    if (filterState.mirrorH) recordCtx.scale(-1, 1);
-    if (filterState.mirrorV) recordCtx.scale(1, -1);
-    recordCtx.drawImage(img, -recordCanvas.width/2, -recordCanvas.height/2);
-    recordCtx.restore();
-    requestAnimationFrame(renderFrame);
-}
-
-function stopRecording() {
-    if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
-    isRecording = false; recordCanvas = null; recordCtx = null;
-    logConsole("Enregistrement arrêté", "sys");
-}
-
-// ==========================================
-// CONSOLE & LOGS UART
+// CONSOLE
 // ==========================================
 function logConsole(msg, type) {
     const out = document.getElementById('console-output');
@@ -506,8 +623,6 @@ function logConsole(msg, type) {
     row.textContent = line;
     out.appendChild(row);
     out.scrollTop = out.scrollHeight;
-    
-    // Mirror dans console navigateur
     console.log(`[PTZ-${type||'info'}] ${msg}`);
 }
 
@@ -523,12 +638,6 @@ function copyLogs() {
     navigator.clipboard.writeText(text).then(() => logConsole("Logs copiés", "success"));
 }
 
-// Récupère les logs UART depuis le maître (si on implémente un endpoint /logs)
-function fetchUartLogs() {
-    logConsole("Sync UART demandée (via status)", "sys");
-    executeCommand('status');
-}
-
 function executeCommand(val) {
     const input = document.getElementById('console-input');
     const cmd = val.trim().toLowerCase();
@@ -538,7 +647,7 @@ function executeCommand(val) {
     switch(cmd) {
         case 'clear': clearLogs(); return;
         case 'home': sendCmd('HOME'); logConsole("HOME envoyé", "cmd"); return;
-        case 'center': sendCmd('CENTER'); logConsole("CENTER envoyé (position 3/4)", "cmd"); return;
+        case 'center': sendCmd('CENTER'); logConsole("CENTER envoyé (position 1/4)", "cmd"); return;
         case 'left': sendCmd('H:64'); logConsole("Pan gauche rapide", "cmd"); return;
         case 'right': sendCmd('H:-64'); logConsole("Pan droite rapide", "cmd"); return;
         case 'up': sendCmd('V:64'); logConsole("Tilt haut rapide", "cmd"); return;
@@ -555,11 +664,6 @@ function executeCommand(val) {
 function switchTab(tab) {
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
     document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-    if (tab === 'studio') {
-        document.getElementById('nav-studio').classList.add('active');
-        document.getElementById('tab-studio').classList.add('active');
-    } else {
-        document.getElementById('nav-terminal').classList.add('active');
-        document.getElementById('tab-terminal').classList.add('active');
-    }
+    document.getElementById('nav-' + tab).classList.add('active');
+    document.getElementById('tab-' + tab).classList.add('active');
 }
