@@ -1,3 +1,67 @@
+/* ============================================
+   AJOUTS CSS v3.0 — À ajouter à la fin de style.css
+   ============================================ */
+
+/* Hint PTZ */
+.ptz-hint {
+    text-align: center;
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 10px;
+    font-style: italic;
+}
+
+/* Sélecteur résolution */
+.res-select {
+    width: 100%;
+    background: var(--bg-darker);
+    border: 1px solid var(--border-color);
+    color: #fff;
+    padding: 10px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    outline: none;
+    cursor: pointer;
+}
+.res-select:focus {
+    border-color: var(--accent-blue);
+}
+
+/* Mode thermal */
+#mode-thermal {
+    background: rgba(239, 68, 68, 0.05);
+    border-color: rgba(239, 68, 68, 0.2);
+}
+#mode-thermal:hover {
+    background: rgba(239, 68, 68, 0.1);
+}
+#mode-thermal.active {
+    background: rgba(239, 68, 68, 0.15);
+    border-color: var(--accent-red);
+    color: #fca5a5;
+}
+
+/* Console améliorée */
+.console-box {
+    background: var(--bg-darker);
+    border-radius: 6px;
+    height: 400px;
+    padding: 16px;
+    font-family: 'SF Mono', Menlo, Monaco, Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    overflow-y: auto;
+    border: 1px solid var(--border-color);
+}
+.log-row { margin-bottom: 3px; white-space: pre-wrap; word-break: break-all; }
+.log-row.sys { color: #60a5fa; }
+.log-row.cmd { color: #c084fc; }
+.log-row.success { color: #34d399; }
+.log-row.err { color: #f87171; font-weight: 500; }
+
+/* Recording pulse */
+.recording { animation: pulse 1.2s infinite; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
 :root {
     --bg-app: #0b0f19;
     --bg-card: #141b2d;
