@@ -1,548 +1,669 @@
-// =============================================================================
-// S3-PRO PTZ — ESCLAVE MOTEURS v3.3
-// Mouvement continu fluide | START/STOP | PAN centre=1/2 | TILT centre=1/4
-// PAN inversé | TILT normal | Latence nulle
-// =============================================================================
-#include <Arduino.h>
-#include <HardwareSerial.h>
+// ==========================================
+// S3-PRO PTZ — APP.JS v3.1
+// Moteurs fluides | Capture HD fixée | Onglet paramètres | Enregistrement corrigé
+// ==========================================
 
-// --- UART ---
-#define UART_MASTER_RX  44
-#define UART_MASTER_TX  43
-#define UART_BAUD       115200
+var espIp = window.location.hostname;
+if (!espIp || espIp === "localhost" || espIp.includes("github.io") || espIp === "") {
+    espIp = localStorage.getItem('ptz_ip') || '';
+}
 
-// --- MOTEURS ---
-const uint8_t PAN_PINS[4]  = {1, 2, 4, 5};
-const uint8_t TILT_PINS[4] = {8, 9, 10, 11};
+var isConnected = false;
+var isRecording = false;
+var ptzInterval = null;
+var ptzHoldTimer = null;
+var isHolding = false;
+var mediaRecorder = null;
+var recordCanvas = null;
+var recordCtx = null;
+var recordInterval = null;
 
-// Fins de course
-#define LS_PAN_MIN    6
-#define LS_PAN_MAX    7
-#define LS_TILT_MIN   13
-#define LS_TILT_MAX   12
-
-// INVERSION: PAN inversé, TILT normal
-#define INVERT_PAN    true
-#define INVERT_TILT   false
-
-// --- SÉQUENCE DEMI-PAS ---
-const uint8_t STEP_SEQ[8][4] = {
-  {1,0,0,0}, {1,1,0,0}, {0,1,0,0}, {0,1,1,0},
-  {0,0,1,0}, {0,0,1,1}, {0,0,0,1}, {1,0,0,1}
+var filterState = {
+    brightness: 100,
+    saturation: 100,
+    contrast: 100,
+    rotation: 0,
+    mirrorH: false,
+    mirrorV: false,
+    mode: 'normal'
 };
 
-// Vitesses
-#define STEP_DELAY_HOMING   1200
-#define STEP_DELAY_MOVE     300   // Plus rapide = plus fluide
+window.addEventListener('DOMContentLoaded', function() {
+    const root = document.getElementById('app-root');
+    if (!root) return;
 
-HardwareSerial masterSerial(1);
+    root.innerHTML = `
+    <div class="app-container">
+        <header class="pro-header">
+            <div class="brand-zone">
+                <h1 class="pro-logo">S3-PRO <span style="color:#6366f1">PTZ</span></h1>
+                <div class="sub-brand">PAN/TILT DUAL-AXIS MONITORING</div>
+            </div>
+            <div class="connection-zone">
+                <input type="text" id="esp-ip" class="pro-input" placeholder="IP ESP32" value="${espIp}">
+                <button onclick="connectSystem()" class="pro-btn btn-primary">Connecter</button>
+                <span id="conn-status" class="status-dot offline">●</span>
+            </div>
+        </header>
 
-// --- ÉTAT ---
-struct MotorState {
-  volatile int32_t pos;
-  volatile int32_t range;
-  volatile int32_t center;
-  volatile uint8_t seqIndex;
-  volatile bool busy;
-  volatile bool homed;
-  volatile bool moving;
-  volatile int8_t direction;
-};
+        <div class="tabs-nav">
+            <button id="nav-studio" class="tab-btn active" onclick="switchTab('studio')">🎬 Studio Live</button>
+            <button id="nav-params" class="tab-btn" onclick="switchTab('params')">⚙️ Paramètres</button>
+            <button id="nav-terminal" class="tab-btn" onclick="switchTab('terminal')">📟 Terminal</button>
+        </div>
 
-static MotorState panState  = {0, 0, 0, 0, false, false, false, 0};
-static MotorState tiltState = {0, 0, 0, 0, false, false, false, 0};
+        <div id="tab-studio" class="tab-content active">
+            <div class="studio-grid">
+                <div class="video-zone">
+                    <div class="video-viewport">
+                        <div class="status-badge secure">● SÉCURISÉ</div>
+                        <img id="video-stream" src="" alt="En attente..." style="display:none">
+                        <div id="stream-placeholder" class="stream-placeholder">Entrez l'IP et cliquez Connecter</div>
+                    </div>
+                    <div class="action-bar">
+                        <button onclick="rotateStream()" class="pro-btn">↻ Rotation</button>
+                        <button onclick="captureHD()" class="pro-btn btn-primary">📸 Capture HD</button>
+                        <button onclick="capturePhoto()" class="pro-btn btn-primary">📷 Photo</button>
+                        <button id="btn-record" onclick="toggleRecord()" class="pro-btn btn-danger">🔴 Enregistrer</button>
+                        <button onclick="sendCmd('HOME')" class="pro-btn">🏠 HOME</button>
+                    </div>
+                </div>
 
-struct MotorCmd {
-  int32_t steps;
-  bool home;
-  bool center;
-  bool start;
-  bool stop;
-  int8_t dir;
-};
-static QueueHandle_t panQueue  = nullptr;
-static QueueHandle_t tiltQueue = nullptr;
+                <div class="side-panel">
+                    <!-- PTZ -->
+                    <div class="pro-card">
+                        <div class="section-title">🎮 Contrôle Pan / Tilt</div>
+                        <div class="ptz-grid">
+                            <div></div>
+                            <button class="ptz-btn ptz-arrow" 
+                                onmousedown="ptzPress('V', 32)" onmouseup="ptzRelease()" onmouseleave="ptzRelease()"
+                                ontouchstart="ptzPress('V', 32)" ontouchend="ptzRelease()">▲ Haut</button>
+                            <div></div>
+                            <button class="ptz-btn ptz-arrow" 
+                                onmousedown="ptzPress('H', 32)" onmouseup="ptzRelease()" onmouseleave="ptzRelease()"
+                                ontouchstart="ptzPress('H', 32)" ontouchend="ptzRelease()">◀ Gauche</button>
+                            <button class="ptz-btn ptz-home" onclick="sendCmd('CENTER')">⌂ CENTRE</button>
+                            <button class="ptz-btn ptz-arrow" 
+                                onmousedown="ptzPress('H', -32)" onmouseup="ptzRelease()" onmouseleave="ptzRelease()"
+                                ontouchstart="ptzPress('H', -32)" ontouchend="ptzRelease()">Droite ▶</button>
+                            <div></div>
+                            <button class="ptz-btn ptz-arrow" 
+                                onmousedown="ptzPress('V', -32)" onmouseup="ptzRelease()" onmouseleave="ptzRelease()"
+                                ontouchstart="ptzPress('V', -32)" ontouchend="ptzRelease()">▼ Bas</button>
+                            <div></div>
+                        </div>
+                        <div class="ptz-hint">Clic rapide = pas large | Maintenir = pas fin & continu</div>
+                    </div>
 
-// --- UTILITAIRES ---
-void logBoth(const char* fmt, ...) {
-  char buf[256];
-  va_list args;
-  va_start(args, fmt);
-  vsnprintf(buf, sizeof(buf), fmt, args);
-  va_end(args);
-  Serial.println(buf);
-  masterSerial.println(buf);
-}
+                    <!-- RÉSOLUTION STREAM -->
+                    <div class="pro-card">
+                        <div class="section-title">📐 Résolution Stream</div>
+                        <select id="res-select" class="pro-input res-select" onchange="setResolution(this.value)">
+                            <option value="QVGA">QVGA (320×240) — Ultra rapide</option>
+                            <option value="VGA">VGA (640×480) — Rapide</option>
+                            <option value="SVGA">SVGA (800×600) — Standard</option>
+                            <option value="XGA">XGA (1024×768) — Qualité</option>
+                            <option value="HD">HD (1280×720) — Haute qualité</option>
+                            <option value="FHD">FHD (1600×1200) — Max</option>
+                        </select>
+                    </div>
 
-inline void motorOff(const uint8_t pins[4]) {
-  for (uint8_t i = 0; i < 4; i++) digitalWrite(pins[i], LOW);
-}
+                    <!-- QUALITÉ JPEG -->
+                    <div class="pro-card">
+                        <div class="section-title">🎯 Qualité JPEG Stream</div>
+                        <div class="range-group">
+                            <div class="range-labels">
+                                <span>Qualité (4=meilleur, 63=pire)</span>
+                                <span id="val-quality" class="value-display">12</span>
+                            </div>
+                            <input type="range" id="ctrl-quality" class="pro-slider" min="4" max="63" value="12" 
+                                oninput="updateQuality(this.value)" onchange="setQuality(this.value)">
+                        </div>
+                    </div>
 
-inline void applyStep(const uint8_t pins[4], uint8_t idx) {
-  for (uint8_t i = 0; i < 4; i++) digitalWrite(pins[i], STEP_SEQ[idx][i]);
-}
+                    <!-- MIROIRS -->
+                    <div class="pro-card">
+                        <div class="section-title">🔃 Miroirs</div>
+                        <div class="toggle-row">
+                            <span class="label-text">Miroir Horizontal</span>
+                            <label class="pro-switch">
+                                <input type="checkbox" id="mirror-h" onchange="toggleMirror('h', this.checked)">
+                                <span class="switch-slider"></span>
+                            </label>
+                        </div>
+                        <div class="toggle-row">
+                            <span class="label-text">Miroir Vertical</span>
+                            <label class="pro-switch">
+                                <input type="checkbox" id="mirror-v" onchange="toggleMirror('v', this.checked)">
+                                <span class="switch-slider"></span>
+                            </label>
+                        </div>
+                    </div>
 
-inline bool limitActive(uint8_t pin) {
-  return digitalRead(pin) == LOW;
-}
+                    <!-- IMAGE -->
+                    <div class="pro-card">
+                        <div class="section-title">🎨 Traitement d'image</div>
+                        <div class="range-group">
+                            <div class="range-labels">
+                                <span>Luminosité</span>
+                                <span id="val-brightness" class="value-display">100%</span>
+                            </div>
+                            <input type="range" id="ctrl-brightness" class="pro-slider" min="0" max="300" value="100" oninput="updateFilter('brightness', this.value)">
+                        </div>
+                        <div class="range-group">
+                            <div class="range-labels">
+                                <span>Saturation</span>
+                                <span id="val-saturation" class="value-display">100%</span>
+                            </div>
+                            <input type="range" id="ctrl-saturation" class="pro-slider" min="0" max="300" value="100" oninput="updateFilter('saturation', this.value)">
+                        </div>
+                        <div class="range-group">
+                            <div class="range-labels">
+                                <span>Contraste</span>
+                                <span id="val-contrast" class="value-display">100%</span>
+                            </div>
+                            <input type="range" id="ctrl-contrast" class="pro-slider" min="0" max="300" value="100" oninput="updateFilter('contrast', this.value)">
+                        </div>
+                        <div class="mode-group">
+                            <button id="mode-normal" class="mode-btn active" onclick="setMode('normal')">Normal</button>
+                            <button id="mode-night" class="mode-btn" onclick="setMode('night')">🌙 Vision Nocturne</button>
+                            <button id="mode-thermal" class="mode-btn" onclick="setMode('thermal')">🔥 Thermique</button>
+                            <button id="mode-surveillance" class="mode-btn" onclick="setMode('surveillance')">👁 Surveillance</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
 
-int32_t applyInvertPan(int32_t steps) {
-  return INVERT_PAN ? -steps : steps;
-}
+        <div id="tab-params" class="tab-content">
+            <div class="params-grid">
+                <div class="pro-card">
+                    <div class="section-title">📷 Paramètres Caméra (appliqués sur l'ESP)</div>
+                    <div class="range-group">
+                        <div class="range-labels">
+                            <span>Luminosité capteur (-2 à +2)</span>
+                            <span id="val-cam-brightness" class="value-display">1</span>
+                        </div>
+                        <input type="range" id="cam-brightness" class="pro-slider" min="-2" max="2" value="1" 
+                            oninput="document.getElementById('val-cam-brightness').textContent=this.value">
+                    </div>
+                    <div class="range-group">
+                        <div class="range-labels">
+                            <span>Contraste capteur (-2 à +2)</span>
+                            <span id="val-cam-contrast" class="value-display">1</span>
+                        </div>
+                        <input type="range" id="cam-contrast" class="pro-slider" min="-2" max="2" value="1"
+                            oninput="document.getElementById('val-cam-contrast').textContent=this.value">
+                    </div>
+                    <div class="range-group">
+                        <div class="range-labels">
+                            <span>Saturation capteur (-2 à +2)</span>
+                            <span id="val-cam-saturation" class="value-display">1</span>
+                        </div>
+                        <input type="range" id="cam-saturation" class="pro-slider" min="-2" max="2" value="1"
+                            oninput="document.getElementById('val-cam-saturation').textContent=this.value">
+                    </div>
+                    <div class="range-group">
+                        <div class="range-labels">
+                            <span>Netteté capteur (-2 à +2)</span>
+                            <span id="val-cam-sharpness" class="value-display">2</span>
+                        </div>
+                        <input type="range" id="cam-sharpness" class="pro-slider" min="-2" max="2" value="2"
+                            oninput="document.getElementById('val-cam-sharpness').textContent=this.value">
+                    </div>
+                    <button onclick="applyCameraParams()" class="pro-btn btn-primary" style="width:100%;margin-top:12px;">
+                        ✓ Appliquer les paramètres caméra
+                    </button>
+                </div>
+                
+                <div class="pro-card">
+                    <div class="section-title">ℹ️ Informations</div>
+                    <p style="color:var(--text-muted);font-size:13px;line-height:1.6;">
+                        Les paramètres ci-contre sont envoyés directement au capteur OV2640.<br><br>
+                        <strong>Luminosité :</strong> Exposition globale<br>
+                        <strong>Contraste :</strong> Différence clair/foncé<br>
+                        <strong>Saturation :</strong> Intensité des couleurs<br>
+                        <strong>Netteté :</strong> Accentuation des contours<br><br>
+                        Le stream redémarre automatiquement après application.
+                    </p>
+                </div>
+            </div>
+        </div>
 
-int32_t applyInvertTilt(int32_t steps) {
-  return INVERT_TILT ? -steps : steps;
-}
+        <div id="tab-terminal" class="tab-content">
+            <div class="terminal-layout">
+                <div class="terminal-zone">
+                    <div class="panel-header">
+                        <span class="panel-title">📟 Console Système</span>
+                        <div class="header-actions">
+                            <button onclick="copyLogs()" class="pro-btn btn-small">📋 Copier</button>
+                            <button onclick="clearLogs()" class="pro-btn btn-small">🗑 Effacer</button>
+                            <button onclick="executeCommand('status')" class="pro-btn btn-small">🔄 Status</button>
+                        </div>
+                    </div>
+                    <div id="console-output" class="console-box">
+                        <div class="log-row sys">[SYS] Console PTZ v3.1 initialisée</div>
+                        <div class="log-row sys">[SYS] Moteurs fluides | Accélération trapézoïdale</div>
+                    </div>
+                    <div class="console-input-bar">
+                        <span class="prompt">&gt;</span>
+                        <input type="text" id="console-input" placeholder="Commande..." onkeydown="if(event.key==='Enter')executeCommand(this.value)">
+                    </div>
+                </div>
+                <div class="commands-zone">
+                    <div class="panel-header">
+                        <span class="panel-title">📖 Commandes Rapides</span>
+                    </div>
+                    <div class="command-list">
+                        <div class="cmd-item" onclick="executeCommand('home')"><span class="cmd-syntax">home</span><span class="cmd-desc">Recalage complet</span></div>
+                        <div class="cmd-item" onclick="executeCommand('center')"><span class="cmd-syntax">center</span><span class="cmd-desc">Position 1/4 (vue)</span></div>
+                        <div class="cmd-item" onclick="executeCommand('left')"><span class="cmd-syntax">left</span><span class="cmd-desc">Pan gauche</span></div>
+                        <div class="cmd-item" onclick="executeCommand('right')"><span class="cmd-syntax">right</span><span class="cmd-desc">Pan droite</span></div>
+                        <div class="cmd-item" onclick="executeCommand('up')"><span class="cmd-syntax">up</span><span class="cmd-desc">Tilt haut</span></div>
+                        <div class="cmd-item" onclick="executeCommand('down')"><span class="cmd-syntax">down</span><span class="cmd-desc">Tilt bas</span></div>
+                        <div class="cmd-item" onclick="executeCommand('status')"><span class="cmd-syntax">status</span><span class="cmd-desc">État complet</span></div>
+                        <div class="cmd-item" onclick="executeCommand('clear')"><span class="cmd-syntax">clear</span><span class="cmd-desc">Effacer console</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>`;
 
-// --- PAS UNIQUE ---
-void doOneStep(const uint8_t pins[4], MotorState &state, bool forward,
-               uint8_t limitMin, uint8_t limitMax) {
-  if (forward && limitActive(limitMax)) { state.moving = false; return; }
-  if (!forward && limitActive(limitMin)) { state.moving = false; return; }
-  
-  if (state.homed) {
-    if (forward && state.pos >= state.range) { state.moving = false; return; }
-    if (!forward && state.pos <= 0) { state.moving = false; return; }
-  }
-  
-  if (forward) {
-    state.seqIndex = (state.seqIndex + 1) % 8;
-    state.pos++;
-  } else {
-    state.seqIndex = (state.seqIndex == 0) ? 7 : state.seqIndex - 1;
-    state.pos--;
-  }
-  applyStep(pins, state.seqIndex);
-}
+    filterState.mirrorH = localStorage.getItem('ptz_mirror_h') === 'true';
+    filterState.mirrorV = localStorage.getItem('ptz_mirror_v') === 'true';
+    document.getElementById('mirror-h').checked = filterState.mirrorH;
+    document.getElementById('mirror-v').checked = filterState.mirrorV;
+    if (espIp) connectSystem();
+});
 
-// --- HOMING AVEC CENTRE PAN=1/2, TILT=1/4 ---
-void doHoming(const uint8_t pins[4], MotorState &state,
-              uint8_t limitMin, uint8_t limitMax, const char* name) {
-  if (state.busy) return;
-  state.busy = true;
-  state.homed = false;
-  state.moving = false;
+// ==========================================
+// CONNEXION
+// ==========================================
+function connectSystem() {
+    const input = document.getElementById('esp-ip');
+    espIp = input.value.trim();
+    if (!espIp) { logConsole("Entrez une IP", "err"); return; }
+    localStorage.setItem('ptz_ip', espIp);
 
-  logBoth("\n[%s] === HOMING ===", name);
-
-  // Phase 1: butée MIN
-  logBoth("[%s] -> butee MIN...", name);
-  if (!limitActive(limitMin)) {
-    int32_t timeout = 0;
-    while (!limitActive(limitMin)) {
-      state.seqIndex = (state.seqIndex == 0) ? 7 : state.seqIndex - 1;
-      state.pos--;
-      applyStep(pins, state.seqIndex);
-      delayMicroseconds(STEP_DELAY_HOMING);
-      if (++timeout > 30000) {
-        logBoth("[%s] TIMEOUT MIN!", name);
-        motorOff(pins);
-        state.busy = false;
-        return;
-      }
-      if (timeout % 5 == 0) vTaskDelay(1);
-    }
-    motorOff(pins);
-  }
-  state.pos = 0;
-  logBoth("[%s] MIN atteinte", name);
-  delay(100);
-
-  // Dégagement MIN (8 demi-pas)
-  for (int i = 0; i < 8; i++) {
-    state.seqIndex = (state.seqIndex + 1) % 8;
-    state.pos++;
-    applyStep(pins, state.seqIndex);
-    delayMicroseconds(STEP_DELAY_HOMING);
-  }
-  motorOff(pins);
-  state.pos = 8;
-  delay(150);
-
-  // Phase 2: butée MAX
-  logBoth("[%s] -> butee MAX...", name);
-  int32_t stepCount = 0;
-  if (!limitActive(limitMax)) {
-    int32_t timeout = 0;
-    while (!limitActive(limitMax)) {
-      state.seqIndex = (state.seqIndex + 1) % 8;
-      state.pos++;
-      applyStep(pins, state.seqIndex);
-      delayMicroseconds(STEP_DELAY_HOMING);
-      stepCount++;
-      if (++timeout > 40000) {
-        logBoth("[%s] TIMEOUT MAX!", name);
-        motorOff(pins);
-        state.busy = false;
-        return;
-      }
-      if (timeout % 5 == 0) vTaskDelay(1);
-    }
-    motorOff(pins);
-  }
-  state.range = stepCount + 8;
-  logBoth("[%s] MAX atteinte, course=%d pas", name, state.range);
-  delay(100);
-
-  // Dégagement MAX (8 demi-pas en sens inverse)
-  for (int i = 0; i < 8; i++) {
-    state.seqIndex = (state.seqIndex == 0) ? 7 : state.seqIndex - 1;
-    state.pos--;
-    applyStep(pins, state.seqIndex);
-    delayMicroseconds(STEP_DELAY_HOMING);
-  }
-  motorOff(pins);
-  state.pos = state.range - 8;
-  delay(150);
-
-  // CENTRE : PAN = 1/2, TILT = 1/4
-  if (strcmp(name, "PAN") == 0) {
-    state.center = state.range / 2;
-    logBoth("[%s] centre=1/2=%d", name, state.center);
-  } else {
-    state.center = state.range / 4;
-    logBoth("[%s] centre=1/4=%d", name, state.center);
-  }
-
-  int32_t toCenter = state.center - state.pos;
-  logBoth("[%s] deplacement=%d", name, toCenter);
-
-  if (toCenter != 0) {
-    bool forward = (toCenter > 0);
-    int32_t total = abs(toCenter);
-    for (int32_t i = 0; i < total; i++) {
-      doOneStep(pins, state, forward, limitMin, limitMax);
-      delayMicroseconds(STEP_DELAY_HOMING);
-      if (i % 5 == 0) vTaskDelay(1);
-    }
-    motorOff(pins);
-  }
-
-  state.pos = state.center;
-  state.homed = true;
-  state.busy = false;
-  logBoth("[%s] === HOMING OK pos=%d/%d ===", name, state.pos, state.range);
-}
-
-void goCenter(const uint8_t pins[4], MotorState &state,
-              uint8_t limitMin, uint8_t limitMax, const char* name) {
-  if (!state.homed) { logBoth("[%s] ERREUR: homing non fait!", name); return; }
-  if (state.busy) { logBoth("[%s] occupe!", name); return; }
-  state.busy = true;
-  state.moving = false;
-  int32_t delta = state.center - state.pos;
-  logBoth("[%s] -> centre: %d->%d", name, state.pos, state.center);
-  
-  bool forward = (delta > 0);
-  int32_t total = abs(delta);
-  for (int32_t i = 0; i < total; i++) {
-    doOneStep(pins, state, forward, limitMin, limitMax);
-    delayMicroseconds(STEP_DELAY_HOMING);
-    if (i % 5 == 0) vTaskDelay(1);
-  }
-  motorOff(pins);
-  
-  state.busy = false;
-  logBoth("[%s] centre OK pos=%d", name, state.pos);
-}
-
-void moveRelative(const uint8_t pins[4], MotorState &state, int32_t steps,
-                  uint8_t limitMin, uint8_t limitMax, const char* name) {
-  if (state.busy) { logBoth("[%s] occupe!", name); return; }
-  steps = ((steps + (steps > 0 ? 2 : -2)) / 4) * 4;
-  if (steps == 0) return;
-  state.busy = true;
-  state.moving = false;
-  logBoth("[%s] %+d pas (pos=%d)", name, steps, state.pos);
-  
-  bool forward = (steps > 0);
-  int32_t total = abs(steps);
-  for (int32_t i = 0; i < total; i++) {
-    doOneStep(pins, state, forward, limitMin, limitMax);
-    delayMicroseconds(STEP_DELAY_MOVE);
-    if (i % 5 == 0) vTaskDelay(1);
-  }
-  motorOff(pins);
-  
-  state.busy = false;
-  logBoth("[%s] fini pos=%d/%d", name, state.pos, state.range);
-}
-
-// --- MOUVEMENT CONTINU ---
-void startContinuous(const uint8_t pins[4], MotorState &state, int8_t dir,
-                     uint8_t limitMin, uint8_t limitMax, const char* name) {
-  if (!state.homed) { logBoth("[%s] ERREUR: homing non fait!", name); return; }
-  if (state.busy) return;
-  
-  state.moving = true;
-  state.direction = dir;
-  logBoth("[%s] START dir=%+d", name, dir);
-}
-
-void stopContinuous(const uint8_t pins[4], MotorState &state, const char* name) {
-  state.moving = false;
-  state.direction = 0;
-  motorOff(pins);
-  logBoth("[%s] STOP pos=%d", name, state.pos);
-}
-
-// --- TÂCHES AVEC BOUCLE CONTINU ---
-void panTask(void* pvParameters) {
-  MotorCmd cmd;
-  for (;;) {
-    if (xQueueReceive(panQueue, &cmd, 0) == pdTRUE) {
-      if (cmd.home) {
-        stopContinuous(PAN_PINS, panState, "PAN");
-        doHoming(PAN_PINS, panState, LS_PAN_MIN, LS_PAN_MAX, "PAN");
-      }
-      else if (cmd.center) {
-        stopContinuous(PAN_PINS, panState, "PAN");
-        goCenter(PAN_PINS, panState, LS_PAN_MIN, LS_PAN_MAX, "PAN");
-      }
-      else if (cmd.start) {
-        int8_t dir = applyInvertPan(cmd.dir);
-        startContinuous(PAN_PINS, panState, dir, LS_PAN_MIN, LS_PAN_MAX, "PAN");
-      }
-      else if (cmd.stop) {
-        stopContinuous(PAN_PINS, panState, "PAN");
-      }
-      else {
-        stopContinuous(PAN_PINS, panState, "PAN");
-        int32_t s = applyInvertPan(cmd.steps);
-        moveRelative(PAN_PINS, panState, s, LS_PAN_MIN, LS_PAN_MAX, "PAN");
-      }
-    }
+    const img = document.getElementById('video-stream');
+    const placeholder = document.getElementById('stream-placeholder');
+    img.src = `http://${espIp}/stream?t=${Date.now()}`;
+    img.style.display = 'block';
+    placeholder.style.display = 'none';
     
-    if (panState.moving && panState.direction != 0) {
-      doOneStep(PAN_PINS, panState, panState.direction > 0, LS_PAN_MIN, LS_PAN_MAX);
-      delayMicroseconds(STEP_DELAY_MOVE);
-    } else {
-      vTaskDelay(pdMS_TO_TICKS(5));
-    }
-  }
+    img.onerror = function() {
+        updateStatus(false);
+        logConsole("Stream erreur - reconnexion...", "err");
+        setTimeout(connectSystem, 3000);
+    };
+    img.onload = function() {
+        updateStatus(true);
+        logConsole("Stream actif", "success");
+    };
+
+    fetch(`http://${espIp}/status`, {mode: 'cors', cache: 'no-cache'})
+        .then(r => r.json())
+        .then(d => {
+            isConnected = true;
+            updateStatus(true);
+            logConsole(`Connecté: ${espIp} | RSSI:${d.rssi}dBm`, "success");
+        })
+        .catch(e => {
+            updateStatus(false);
+            logConsole("Connexion API: " + e.message, "err");
+        });
 }
 
-void tiltTask(void* pvParameters) {
-  MotorCmd cmd;
-  for (;;) {
-    if (xQueueReceive(tiltQueue, &cmd, 0) == pdTRUE) {
-      if (cmd.home) {
-        stopContinuous(TILT_PINS, tiltState, "TILT");
-        doHoming(TILT_PINS, tiltState, LS_TILT_MIN, LS_TILT_MAX, "TILT");
-      }
-      else if (cmd.center) {
-        stopContinuous(TILT_PINS, tiltState, "TILT");
-        goCenter(TILT_PINS, tiltState, LS_TILT_MIN, LS_TILT_MAX, "TILT");
-      }
-      else if (cmd.start) {
-        int8_t dir = applyInvertTilt(cmd.dir);
-        startContinuous(TILT_PINS, tiltState, dir, LS_TILT_MIN, LS_TILT_MAX, "TILT");
-      }
-      else if (cmd.stop) {
-        stopContinuous(TILT_PINS, tiltState, "TILT");
-      }
-      else {
-        stopContinuous(TILT_PINS, tiltState, "TILT");
-        int32_t s = applyInvertTilt(cmd.steps);
-        moveRelative(TILT_PINS, tiltState, s, LS_TILT_MIN, LS_TILT_MAX, "TILT");
-      }
-    }
+function updateStatus(ok) {
+    document.getElementById('conn-status').className = ok ? 'status-dot online' : 'status-dot offline';
+}
+
+// ==========================================
+// PTZ FLUIDE
+// ==========================================
+function ptzPress(axis, steps) {
+    if (!isConnected) { logConsole("Non connecté", "err"); return; }
+    isHolding = false;
     
-    if (tiltState.moving && tiltState.direction != 0) {
-      doOneStep(TILT_PINS, tiltState, tiltState.direction > 0, LS_TILT_MIN, LS_TILT_MAX);
-      delayMicroseconds(STEP_DELAY_MOVE);
-    } else {
-      vTaskDelay(pdMS_TO_TICKS(5));
-    }
-  }
+    // Premier pas immédiat
+    sendCmd(axis + ":" + steps);
+    
+    // Après 250ms, mode fin continu
+    ptzHoldTimer = setTimeout(() => {
+        isHolding = true;
+        ptzInterval = setInterval(() => {
+            let fineSteps = steps > 0 ? 8 : -8;
+            sendCmd(axis + ":" + fineSteps);
+        }, 120); // Plus rapide que 150ms
+    }, 250);
 }
 
-// --- PARSER ---
-void processCommand(const String& line, const char* source) {
-  String clean = "";
-  for (int i = 0; i < line.length(); i++) {
-    char c = line[i];
-    if (c >= 32 && c <= 126) clean += c;
-  }
-  clean.trim();
-  if (clean.length() == 0) return;
-  
-  logBoth("[%s] CMD: '%s'", source, clean.c_str());
-  
-  if (clean == "HOME") {
-    MotorCmd c = {0, true, false, false, false, 0};
-    xQueueSend(panQueue, &c, pdMS_TO_TICKS(100));
-    xQueueSend(tiltQueue, &c, pdMS_TO_TICKS(100));
-    logBoth("[OK] HOME lance");
-    return;
-  }
-  if (clean == "CENTER") {
-    MotorCmd c = {0, false, true, false, false, 0};
-    xQueueSend(panQueue, &c, pdMS_TO_TICKS(100));
-    xQueueSend(tiltQueue, &c, pdMS_TO_TICKS(100));
-    logBoth("[OK] CENTER");
-    return;
-  }
-  if (clean == "START_PAN_LEFT") {
-    MotorCmd c = {0, false, false, true, false, -1};
-    xQueueSend(panQueue, &c, pdMS_TO_TICKS(100));
-    return;
-  }
-  if (clean == "START_PAN_RIGHT") {
-    MotorCmd c = {0, false, false, true, false, +1};
-    xQueueSend(panQueue, &c, pdMS_TO_TICKS(100));
-    return;
-  }
-  if (clean == "START_TILT_UP") {
-    MotorCmd c = {0, false, false, true, false, +1};
-    xQueueSend(tiltQueue, &c, pdMS_TO_TICKS(100));
-    return;
-  }
-  if (clean == "START_TILT_DOWN") {
-    MotorCmd c = {0, false, false, true, false, -1};
-    xQueueSend(tiltQueue, &c, pdMS_TO_TICKS(100));
-    return;
-  }
-  if (clean == "STOP_PAN") {
-    MotorCmd c = {0, false, false, false, true, 0};
-    xQueueSend(panQueue, &c, pdMS_TO_TICKS(100));
-    return;
-  }
-  if (clean == "STOP_TILT") {
-    MotorCmd c = {0, false, false, false, true, 0};
-    xQueueSend(tiltQueue, &c, pdMS_TO_TICKS(100));
-    return;
-  }
-  if (clean.startsWith("H:")) {
-    int32_t steps = clean.substring(2).toInt();
-    MotorCmd c = {steps, false, false, false, false, 0};
-    if (xQueueSend(panQueue, &c, pdMS_TO_TICKS(100)) == pdTRUE)
-      logBoth("[OK] PAN %+d", steps);
-    else logBoth("[ERR] File PAN pleine");
-    return;
-  }
-  if (clean.startsWith("V:")) {
-    int32_t steps = clean.substring(2).toInt();
-    MotorCmd c = {steps, false, false, false, false, 0};
-    if (xQueueSend(tiltQueue, &c, pdMS_TO_TICKS(100)) == pdTRUE)
-      logBoth("[OK] TILT %+d", steps);
-    else logBoth("[ERR] File TILT pleine");
-    return;
-  }
-  if (clean == "TEST") {
-    logBoth("[TEST] Test PAN...");
-    for (int j = 0; j < 50; j++) {
-      for (uint8_t i = 0; i < 8; i++) {
-        applyStep(PAN_PINS, i); delayMicroseconds(STEP_DELAY_MOVE);
-      }
-      if (j % 5 == 0) vTaskDelay(1);
-    }
-    motorOff(PAN_PINS); delay(300);
-    logBoth("[TEST] Test TILT...");
-    for (int j = 0; j < 50; j++) {
-      for (uint8_t i = 0; i < 8; i++) {
-        applyStep(TILT_PINS, i); delayMicroseconds(STEP_DELAY_MOVE);
-      }
-      if (j % 5 == 0) vTaskDelay(1);
-    }
-    motorOff(TILT_PINS);
-    logBoth("[TEST] OK");
-    return;
-  }
-  if (clean == "STATUS") {
-    logBoth("[STATUS] PAN=%d/%d homed=%s moving=%s | TILT=%d/%d homed=%s moving=%s",
-      panState.pos, panState.range, panState.homed?"OUI":"NON", panState.moving?"OUI":"NON",
-      tiltState.pos, tiltState.range, tiltState.homed?"OUI":"NON", tiltState.moving?"OUI":"NON");
-    return;
-  }
-  logBoth("[WARN] Inconnu: '%s'", clean.c_str());
+function ptzRelease() {
+    clearTimeout(ptzHoldTimer);
+    clearInterval(ptzInterval);
+    isHolding = false;
 }
 
-void uartTask(void* pvParameters) {
-  String buf = "";
-  for (;;) {
-    while (masterSerial.available()) {
-      char c = (char)masterSerial.read();
-      if (c == '\n' || c == '\r') {
-        if (buf.length() > 0) { processCommand(buf, "UART"); buf = ""; }
-      } else if (buf.length() < 64) { buf += c; }
+function sendCmd(cmd) {
+    if (!espIp) return;
+    fetch(`http://${espIp}/cmd`, {
+        method: 'POST',
+        mode: 'cors',
+        headers: {'Content-Type': 'text/plain'},
+        body: cmd,
+        cache: 'no-cache'
+    })
+    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); logConsole("> " + cmd, "cmd"); })
+    .catch(e => {
+        logConsole("Erreur cmd: " + e.message, "err");
+        isConnected = false; updateStatus(false);
+    });
+}
+
+// ==========================================
+// RÉSOLUTION & QUALITÉ
+// ==========================================
+function setResolution(res) {
+    if (!espIp) { logConsole("IP non définie", "err"); return; }
+    logConsole("Changement résolution: " + res + "...", "sys");
+    fetch(`http://${espIp}/setres`, {
+        method: 'POST', mode: 'cors',
+        headers: {'Content-Type': 'text/plain'},
+        body: res, cache: 'no-cache'
+    })
+    .then(r => r.text())
+    .then(t => {
+        logConsole("Résolution: " + res + " | " + t, "success");
+        // Reconnexion stream après changement
+        setTimeout(() => {
+            const img = document.getElementById('video-stream');
+            img.src = `http://${espIp}/stream?t=${Date.now()}`;
+        }, 1000);
+    })
+    .catch(e => logConsole("Erreur résolution: " + e.message, "err"));
+}
+
+function updateQuality(val) {
+    document.getElementById('val-quality').textContent = val;
+}
+
+function setQuality(val) {
+    if (!espIp) return;
+    fetch(`http://${espIp}/setquality`, {
+        method: 'POST', mode: 'cors',
+        headers: {'Content-Type': 'text/plain'},
+        body: val, cache: 'no-cache'
+    })
+    .then(r => r.text())
+    .then(t => {
+        logConsole("Qualité JPEG: " + val, "success");
+        // Reconnexion stream
+        setTimeout(() => {
+            const img = document.getElementById('video-stream');
+            img.src = `http://${espIp}/stream?t=${Date.now()}`;
+        }, 1000);
+    })
+    .catch(e => logConsole("Erreur qualité: " + e.message, "err"));
+}
+
+// ==========================================
+// PARAMÈTRES CAMÉRA AVANCÉS
+// ==========================================
+function applyCameraParams() {
+    if (!espIp) { logConsole("IP non définie", "err"); return; }
+    
+    const b = document.getElementById('cam-brightness').value;
+    const c = document.getElementById('cam-contrast').value;
+    const s = document.getElementById('cam-saturation').value;
+    const sh = document.getElementById('cam-sharpness').value;
+    
+    const params = `brightness:${b}|contrast:${c}|saturation:${s}|sharpness:${sh}`;
+    
+    logConsole("Application paramètres caméra...", "sys");
+    fetch(`http://${espIp}/setparams`, {
+        method: 'POST', mode: 'cors',
+        headers: {'Content-Type': 'text/plain'},
+        body: params, cache: 'no-cache'
+    })
+    .then(r => r.text())
+    .then(t => {
+        logConsole("Paramètres appliqués: " + t, "success");
+        // Reconnexion stream
+        setTimeout(() => {
+            const img = document.getElementById('video-stream');
+            img.src = `http://${espIp}/stream?t=${Date.now()}`;
+        }, 1500);
+    })
+    .catch(e => logConsole("Erreur paramètres: " + e.message, "err"));
+}
+
+// ==========================================
+// CAPTURES PHOTO & HD
+// ==========================================
+function capturePhoto() {
+    if (!espIp) { logConsole("IP non définie", "err"); return; }
+    logConsole("Capture photo en cours...", "sys");
+    
+    fetch(`http://${espIp}/capture`, {
+        method: 'GET', mode: 'cors', cache: 'no-cache'
+    })
+    .then(r => {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.blob();
+    })
+    .then(blob => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `S3PTZ_${Date.now()}.jpg`;
+        a.click();
+        URL.revokeObjectURL(url);
+        logConsole("Photo sauvegardée!", "success");
+    })
+    .catch(e => logConsole("Erreur photo: " + e.message, "err"));
+}
+
+function captureHD() {
+    if (!espIp) { logConsole("IP non définie", "err"); return; }
+    logConsole("Capture HD native en cours...", "sys");
+    
+    fetch(`http://${espIp}/capturehd`, {
+        method: 'GET', mode: 'cors', cache: 'no-cache'
+    })
+    .then(r => {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.blob();
+    })
+    .then(blob => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `S3PTZ_HD_${Date.now()}.jpg`;
+        a.click();
+        URL.revokeObjectURL(url);
+        logConsole("Photo HD native sauvegardée!", "success");
+    })
+    .catch(e => logConsole("Erreur capture HD: " + e.message, "err"));
+}
+
+// ==========================================
+// ENREGISTREMENT VIDÉO (corrigé avec fetch images)
+// ==========================================
+function toggleRecord() {
+    const btn = document.getElementById('btn-record');
+    if (!isRecording) { startRecording(); btn.innerHTML = "⏹️ Arrêter"; btn.classList.add('recording'); }
+    else { stopRecording(); btn.innerHTML = "🔴 Enregistrer"; btn.classList.remove('recording'); }
+}
+
+function startRecording() {
+    const img = document.getElementById('video-stream');
+    if (!img.src || img.style.display === 'none') { logConsole("Flux non actif", "err"); return; }
+    
+    // Création canvas
+    recordCanvas = document.createElement('canvas');
+    recordCanvas.width = 640;
+    recordCanvas.height = 480;
+    recordCtx = recordCanvas.getContext('2d');
+    
+    const stream = recordCanvas.captureStream(15); // 15 FPS
+    mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9' });
+    const chunks = [];
+    
+    mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+    mediaRecorder.onstop = () => {
+        const blob = new Blob(chunks, { type: 'video/webm' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `S3PTZ_RECORD_${Date.now()}.webm`;
+        a.click();
+        logConsole("Vidéo sauvegardée", "success");
+    };
+    
+    mediaRecorder.start(200);
+    isRecording = true;
+    logConsole("Enregistrement démarré (15 FPS)", "sys");
+    
+    // Boucle de rendu
+    recordInterval = setInterval(() => {
+        if (!recordCtx || !img.complete) return;
+        recordCtx.filter = img.style.filter || 'none';
+        recordCtx.save();
+        recordCtx.translate(recordCanvas.width/2, recordCanvas.height/2);
+        recordCtx.rotate(filterState.rotation * Math.PI / 180);
+        if (filterState.mirrorH) recordCtx.scale(-1, 1);
+        if (filterState.mirrorV) recordCtx.scale(1, -1);
+        recordCtx.drawImage(img, -recordCanvas.width/2, -recordCanvas.height/2);
+        recordCtx.restore();
+    }, 66); // ~15 FPS
+}
+
+function stopRecording() {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+    if (recordInterval) clearInterval(recordInterval);
+    isRecording = false;
+    recordCanvas = null;
+    recordCtx = null;
+    recordInterval = null;
+    logConsole("Enregistrement arrêté", "sys");
+}
+
+// ==========================================
+// MIROIRS & FILTRES
+// ==========================================
+function toggleMirror(axis, checked) {
+    if (axis === 'h') filterState.mirrorH = checked;
+    else filterState.mirrorV = checked;
+    localStorage.setItem('ptz_mirror_' + axis, checked);
+    applyTransform();
+}
+
+function applyTransform() {
+    const img = document.getElementById('video-stream');
+    if (!img) return;
+    let transform = `rotate(${filterState.rotation}deg)`;
+    if (filterState.mirrorH) transform += ' scaleX(-1)';
+    if (filterState.mirrorV) transform += ' scaleY(-1)';
+    img.style.transform = transform;
+}
+
+function updateFilter(type, value) {
+    filterState[type] = parseInt(value);
+    document.getElementById('val-' + type).textContent = value + '%';
+    applyFilters();
+}
+
+function applyFilters() {
+    const img = document.getElementById('video-stream');
+    if (!img) return;
+    let filter = `brightness(${filterState.brightness}%) saturate(${filterState.saturation}%) contrast(${filterState.contrast}%)`;
+    switch(filterState.mode) {
+        case 'night': filter += ' grayscale(100%) brightness(180%) contrast(150%)'; break;
+        case 'thermal': filter += ' grayscale(100%) sepia(100%) hue-rotate(-50deg) saturate(300%) contrast(180%) brightness(120%)'; break;
+        case 'surveillance': filter += ' grayscale(100%) contrast(300%) brightness(80%)'; break;
     }
-    vTaskDelay(pdMS_TO_TICKS(3));
-  }
+    img.style.filter = filter;
 }
 
-void usbTask(void* pvParameters) {
-  String buf = "";
-  for (;;) {
-    while (Serial.available()) {
-      char c = (char)Serial.read();
-      if (c == '\n' || c == '\r') {
-        if (buf.length() > 0) { processCommand(buf, "USB"); buf = ""; }
-      } else if (buf.length() < 64) { buf += c; }
+function setMode(mode) {
+    filterState.mode = mode;
+    document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('mode-' + mode).classList.add('active');
+    switch(mode) {
+        case 'night': setSlider('brightness', 180); setSlider('saturation', 0); setSlider('contrast', 150); break;
+        case 'thermal': setSlider('brightness', 120); setSlider('saturation', 300); setSlider('contrast', 180); break;
+        case 'surveillance': setSlider('brightness', 80); setSlider('saturation', 0); setSlider('contrast', 300); break;
+        default: setSlider('brightness', 100); setSlider('saturation', 100); setSlider('contrast', 100); break;
     }
-    vTaskDelay(pdMS_TO_TICKS(3));
-  }
+    applyFilters();
 }
 
-// --- SETUP ---
-void setup() {
-  Serial.begin(115200);
-  delay(300);
-  Serial.println("\n=== S3-PRO PTZ ESCLAVE v3.3 ===");
-  Serial.println("PAN=1/2 | TILT=1/4 | Mouvement continu | Latence nulle");
-
-  masterSerial.begin(UART_BAUD, SERIAL_8N1, UART_MASTER_RX, UART_MASTER_TX);
-  Serial.printf("[UART] RX=%d TX=%d @%d bauds\n", UART_MASTER_RX, UART_MASTER_TX, UART_BAUD);
-
-  for (uint8_t i = 0; i < 4; i++) {
-    pinMode(PAN_PINS[i], OUTPUT);  digitalWrite(PAN_PINS[i], LOW);
-    pinMode(TILT_PINS[i], OUTPUT); digitalWrite(TILT_PINS[i], LOW);
-  }
-  Serial.println("[OK] Moteurs OFF");
-
-  pinMode(LS_PAN_MIN, INPUT_PULLUP);
-  pinMode(LS_PAN_MAX, INPUT_PULLUP);
-  pinMode(LS_TILT_MIN, INPUT_PULLUP);
-  pinMode(LS_TILT_MAX, INPUT_PULLUP);
-
-  Serial.println("\n[INIT] Etat butees:");
-  Serial.printf("  PAN  MIN(%d):%s MAX(%d):%s\n", 
-    LS_PAN_MIN, limitActive(LS_PAN_MIN)?"ACTIVE":"libre",
-    LS_PAN_MAX, limitActive(LS_PAN_MAX)?"ACTIVE":"libre");
-  Serial.printf("  TILT MIN(%d):%s MAX(%d):%s\n",
-    LS_TILT_MIN, limitActive(LS_TILT_MIN)?"ACTIVE":"libre",
-    LS_TILT_MAX, limitActive(LS_TILT_MAX)?"ACTIVE":"libre");
-
-  panQueue = xQueueCreate(8, sizeof(MotorCmd));
-  tiltQueue = xQueueCreate(8, sizeof(MotorCmd));
-
-  xTaskCreatePinnedToCore(panTask,  "pan",  4096, nullptr, 5, nullptr, 0);
-  xTaskCreatePinnedToCore(tiltTask, "tilt", 4096, nullptr, 5, nullptr, 1);
-  xTaskCreatePinnedToCore(uartTask, "uart", 4096, nullptr, 3, nullptr, 1);
-  xTaskCreatePinnedToCore(usbTask,  "usb",  4096, nullptr, 3, nullptr, 1);
-
-  Serial.println("\n[READY] Homing auto dans 3 secondes...");
-  delay(3000);
-  
-  MotorCmd homeCmd = {0, true, false, false, false, 0};
-  
-  xQueueSend(panQueue, &homeCmd, portMAX_DELAY);
-  Serial.println("[AUTO] Homing PAN...");
-  while (panState.busy) { vTaskDelay(50); }
-  
-  xQueueSend(tiltQueue, &homeCmd, portMAX_DELAY);
-  Serial.println("[AUTO] Homing TILT...");
-  while (tiltState.busy) { vTaskDelay(50); }
-  
-  Serial.println("\n[AUTO] Homing complet! Systeme pret.");
+function setSlider(type, value) {
+    filterState[type] = value;
+    const slider = document.getElementById('ctrl-' + type);
+    const display = document.getElementById('val-' + type);
+    if (slider) slider.value = value;
+    if (display) display.textContent = value + '%';
 }
 
-void loop() {
-  static unsigned long last = 0;
-  if (millis() - last > 30000) {
-    last = millis();
-    logBoth("[STATUS] PAN=%d/%d TILT=%d/%d",
-      panState.pos, panState.range, tiltState.pos, tiltState.range);
-  }
-  delay(100);
+function rotateStream() {
+    filterState.rotation = (filterState.rotation + 90) % 360;
+    applyTransform();
+}
+
+// ==========================================
+// CONSOLE
+// ==========================================
+function logConsole(msg, type) {
+    const out = document.getElementById('console-output');
+    if (!out) return;
+    const row = document.createElement('div');
+    row.className = 'log-row ' + (type || '');
+    const time = new Date().toLocaleTimeString('fr-FR', {hour12:false});
+    const line = `[${time}] ${msg}`;
+    row.textContent = line;
+    out.appendChild(row);
+    out.scrollTop = out.scrollHeight;
+    console.log(`[PTZ-${type||'info'}] ${msg}`);
+}
+
+function clearLogs() {
+    const out = document.getElementById('console-output');
+    if (out) out.innerHTML = '<div class="log-row sys">[SYS] Console effacée</div>';
+}
+
+function copyLogs() {
+    const out = document.getElementById('console-output');
+    if (!out) return;
+    const text = Array.from(out.querySelectorAll('.log-row')).map(r => r.textContent).join('\n');
+    navigator.clipboard.writeText(text).then(() => logConsole("Logs copiés", "success"));
+}
+
+function executeCommand(val) {
+    const input = document.getElementById('console-input');
+    const cmd = val.trim().toLowerCase();
+    input.value = '';
+    if (!cmd) return;
+
+    switch(cmd) {
+        case 'clear': clearLogs(); return;
+        case 'home': sendCmd('HOME'); logConsole("HOME envoyé", "cmd"); return;
+        case 'center': sendCmd('CENTER'); logConsole("CENTER envoyé (position 1/4)", "cmd"); return;
+        case 'left': sendCmd('H:64'); logConsole("Pan gauche rapide", "cmd"); return;
+        case 'right': sendCmd('H:-64'); logConsole("Pan droite rapide", "cmd"); return;
+        case 'up': sendCmd('V:64'); logConsole("Tilt haut rapide", "cmd"); return;
+        case 'down': sendCmd('V:-64'); logConsole("Tilt bas rapide", "cmd"); return;
+        case 'status':
+            fetch(`http://${espIp}/status`, {mode:'cors'}).then(r=>r.json()).then(d=>{
+                logConsole(`IP:${d.ip} RSSI:${d.rssi}dBm Uptime:${d.uptime}s Stream:${d.stream_active?'ON':'OFF'}`, "sys");
+            }).catch(e=>logConsole("Erreur status: "+e.message, "err"));
+            return;
+        default: logConsole("Inconnu: " + cmd, "err");
+    }
+}
+
+function switchTab(tab) {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    document.getElementById('nav-' + tab).classList.add('active');
+    document.getElementById('tab-' + tab).classList.add('active');
 }
