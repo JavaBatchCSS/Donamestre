@@ -80,12 +80,12 @@ window.addEventListener('DOMContentLoaded', function() {
                                 ontouchstart="ptzPress('V', 32)" ontouchend="ptzRelease()">▲ Haut</button>
                             <div></div>
                             <button class="ptz-btn ptz-arrow" 
-                                onmousedown="ptzPress('H', 32)" onmouseup="ptzRelease()" onmouseleave="ptzRelease()"
-                                ontouchstart="ptzPress('H', 32)" ontouchend="ptzRelease()">◀ Gauche</button>
+                                onmousedown="ptzPress('H', -32)" onmouseup="ptzRelease()" onmouseleave="ptzRelease()"
+                                ontouchstart="ptzPress('H', -32)" ontouchend="ptzRelease()">◀ Gauche</button>
                             <button class="ptz-btn ptz-home" onclick="sendCmd('CENTER')">⌂ CENTRE</button>
                             <button class="ptz-btn ptz-arrow" 
-                                onmousedown="ptzPress('H', -32)" onmouseup="ptzRelease()" onmouseleave="ptzRelease()"
-                                ontouchstart="ptzPress('H', -32)" ontouchend="ptzRelease()">Droite ▶</button>
+                                onmousedown="ptzPress('H', 32)" onmouseup="ptzRelease()" onmouseleave="ptzRelease()"
+                                ontouchstart="ptzPress('H', 32)" ontouchend="ptzRelease()">Droite ▶</button>
                             <div></div>
                             <button class="ptz-btn ptz-arrow" 
                                 onmousedown="ptzPress('V', -32)" onmouseup="ptzRelease()" onmouseleave="ptzRelease()"
