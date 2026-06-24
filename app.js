@@ -1,6 +1,7 @@
 // ==========================================
-// S3-PRO PTZ — APP.JS v3.1
-// Moteurs fluides | Capture HD fixée | Onglet paramètres | Enregistrement corrigé
+// S3-PRO PTZ — APP.JS v4.0
+// Mobile-optimized | SD Card HD | Auto resolution
+// Miroirs indépendants | Réglages -10/+10 | localStorage persistant
 // ==========================================
 
 var espIp = window.location.hostname;
@@ -19,16 +20,38 @@ var recordCtx = null;
 var recordInterval = null;
 
 var filterState = {
-    brightness: 100,
-    saturation: 100,
-    contrast: 100,
+    brightness: 0,
+    saturation: 0,
+    contrast: 0,
     rotation: 0,
     mirrorH: false,
-    mirrorV: false,
-    mode: 'normal'
+    mirrorV: false
 };
 
+function loadFromStorage() {
+    filterState.brightness = parseFloat(localStorage.getItem('ptz_brightness')) || 0;
+    filterState.saturation = parseFloat(localStorage.getItem('ptz_saturation')) || 0;
+    filterState.contrast = parseFloat(localStorage.getItem('ptz_contrast')) || 0;
+    filterState.rotation = parseInt(localStorage.getItem('ptz_rotation')) || 0;
+    filterState.mirrorH = localStorage.getItem('ptz_mirror_h') === 'true';
+    filterState.mirrorV = localStorage.getItem('ptz_mirror_v') === 'true';
+    return {
+        savedRes: localStorage.getItem('ptz_resolution') || 'AUTO',
+        savedQuality: localStorage.getItem('ptz_quality') || '12'
+    };
+}
+
+function saveToStorage() {
+    localStorage.setItem('ptz_brightness', filterState.brightness);
+    localStorage.setItem('ptz_saturation', filterState.saturation);
+    localStorage.setItem('ptz_contrast', filterState.contrast);
+    localStorage.setItem('ptz_rotation', filterState.rotation);
+    localStorage.setItem('ptz_mirror_h', filterState.mirrorH);
+    localStorage.setItem('ptz_mirror_v', filterState.mirrorV);
+}
+
 window.addEventListener('DOMContentLoaded', function() {
+    const saved = loadFromStorage();
     const root = document.getElementById('app-root');
     if (!root) return;
 
@@ -46,8 +69,8 @@ window.addEventListener('DOMContentLoaded', function() {
             </div>
         </header>
 
-        <div class="tabs-nav">
-            <button id="nav-studio" class="tab-btn active" onclick="switchTab('studio')">🎬 Studio Live</button>
+        <div class="tabs-nav" id="tabs-nav">
+            <button id="nav-studio" class="tab-btn active" onclick="switchTab('studio')">🎬 Live</button>
             <button id="nav-params" class="tab-btn" onclick="switchTab('params')">⚙️ Paramètres</button>
             <button id="nav-terminal" class="tab-btn" onclick="switchTab('terminal')">📟 Terminal</button>
         </div>
@@ -55,9 +78,11 @@ window.addEventListener('DOMContentLoaded', function() {
         <div id="tab-studio" class="tab-content active">
             <div class="studio-grid">
                 <div class="video-zone">
-                    <div class="video-viewport">
+                    <div class="video-viewport" id="video-viewport">
                         <div class="status-badge secure">● SÉCURISÉ</div>
-                        <img id="video-stream" src="" alt="En attente..." style="display:none">
+                        <div id="stream-wrapper" class="stream-wrapper">
+                            <img id="video-stream" src="" alt="En attente..." style="display:none">
+                        </div>
                         <div id="stream-placeholder" class="stream-placeholder">Entrez l'IP et cliquez Connecter</div>
                     </div>
                     <div class="action-bar">
@@ -70,106 +95,41 @@ window.addEventListener('DOMContentLoaded', function() {
                 </div>
 
                 <div class="side-panel">
-                    <!-- PTZ -->
                     <div class="pro-card">
                         <div class="section-title">🎮 Contrôle Pan / Tilt</div>
                         <div class="ptz-grid">
                             <div></div>
-                            <button class="ptz-btn ptz-arrow" 
+                            <button class="ptz-btn ptz-arrow"
                                 onmousedown="ptzPress('V', 32)" onmouseup="ptzRelease()" onmouseleave="ptzRelease()"
-                                ontouchstart="ptzPress('V', 32)" ontouchend="ptzRelease()">▲ Haut</button>
+                                ontouchstart="ptzPress('V', 32)" ontouchend="ptzRelease()"
+                                ontouchcancel="ptzRelease()">▲ Haut</button>
                             <div></div>
-                            <button class="ptz-btn ptz-arrow" 
+                            <button class="ptz-btn ptz-arrow"
                                 onmousedown="ptzPress('H', -32)" onmouseup="ptzRelease()" onmouseleave="ptzRelease()"
-                                ontouchstart="ptzPress('H', -32)" ontouchend="ptzRelease()">◀ Gauche</button>
+                                ontouchstart="ptzPress('H', -32)" ontouchend="ptzRelease()"
+                                ontouchcancel="ptzRelease()">◀ Gauche</button>
                             <button class="ptz-btn ptz-home" onclick="sendCmd('CENTER')">⌂ CENTRE</button>
-                            <button class="ptz-btn ptz-arrow" 
+                            <button class="ptz-btn ptz-arrow"
                                 onmousedown="ptzPress('H', 32)" onmouseup="ptzRelease()" onmouseleave="ptzRelease()"
-                                ontouchstart="ptzPress('H', 32)" ontouchend="ptzRelease()">Droite ▶</button>
+                                ontouchstart="ptzPress('H', 32)" ontouchend="ptzRelease()"
+                                ontouchcancel="ptzRelease()">Droite ▶</button>
                             <div></div>
-                            <button class="ptz-btn ptz-arrow" 
+                            <button class="ptz-btn ptz-arrow"
                                 onmousedown="ptzPress('V', -32)" onmouseup="ptzRelease()" onmouseleave="ptzRelease()"
-                                ontouchstart="ptzPress('V', -32)" ontouchend="ptzRelease()">▼ Bas</button>
+                                ontouchstart="ptzPress('V', -32)" ontouchend="ptzRelease()"
+                                ontouchcancel="ptzRelease()">▼ Bas</button>
                             <div></div>
                         </div>
                         <div class="ptz-hint">Clic rapide = pas large | Maintenir = pas fin & continu</div>
                     </div>
 
-                    <!-- RÉSOLUTION STREAM -->
                     <div class="pro-card">
                         <div class="section-title">📐 Résolution Stream</div>
                         <select id="res-select" class="pro-input res-select" onchange="setResolution(this.value)">
-                            <option value="QVGA">QVGA (320×240) — Ultra rapide</option>
-                            <option value="VGA">VGA (640×480) — Rapide</option>
-                            <option value="SVGA">SVGA (800×600) — Standard</option>
-                            <option value="XGA">XGA (1024×768) — Qualité</option>
-                            <option value="HD">HD (1280×720) — Haute qualité</option>
-                            <option value="FHD">FHD (1600×1200) — Max</option>
+                            <option value="AUTO" ${saved.savedRes === 'AUTO' ? 'selected' : ''}>AUTO (adaptatif)</option>
+                            <option value="QVGA" ${saved.savedRes === 'QVGA' ? 'selected' : ''}>QVGA (320×240) — Ultra rapide</option>
+                            <option value="VGA" ${saved.savedRes === 'VGA' ? 'selected' : ''}>VGA (640×480) — Rapide</option>
                         </select>
-                    </div>
-
-                    <!-- QUALITÉ JPEG -->
-                    <div class="pro-card">
-                        <div class="section-title">🎯 Qualité JPEG Stream</div>
-                        <div class="range-group">
-                            <div class="range-labels">
-                                <span>Qualité (4=meilleur, 63=pire)</span>
-                                <span id="val-quality" class="value-display">12</span>
-                            </div>
-                            <input type="range" id="ctrl-quality" class="pro-slider" min="4" max="63" value="12" 
-                                oninput="updateQuality(this.value)" onchange="setQuality(this.value)">
-                        </div>
-                    </div>
-
-                    <!-- MIROIRS -->
-                    <div class="pro-card">
-                        <div class="section-title">🔃 Miroirs</div>
-                        <div class="toggle-row">
-                            <span class="label-text">Miroir Horizontal</span>
-                            <label class="pro-switch">
-                                <input type="checkbox" id="mirror-h" onchange="toggleMirror('h', this.checked)">
-                                <span class="switch-slider"></span>
-                            </label>
-                        </div>
-                        <div class="toggle-row">
-                            <span class="label-text">Miroir Vertical</span>
-                            <label class="pro-switch">
-                                <input type="checkbox" id="mirror-v" onchange="toggleMirror('v', this.checked)">
-                                <span class="switch-slider"></span>
-                            </label>
-                        </div>
-                    </div>
-
-                    <!-- IMAGE -->
-                    <div class="pro-card">
-                        <div class="section-title">🎨 Traitement d'image</div>
-                        <div class="range-group">
-                            <div class="range-labels">
-                                <span>Luminosité</span>
-                                <span id="val-brightness" class="value-display">100%</span>
-                            </div>
-                            <input type="range" id="ctrl-brightness" class="pro-slider" min="0" max="300" value="100" oninput="updateFilter('brightness', this.value)">
-                        </div>
-                        <div class="range-group">
-                            <div class="range-labels">
-                                <span>Saturation</span>
-                                <span id="val-saturation" class="value-display">100%</span>
-                            </div>
-                            <input type="range" id="ctrl-saturation" class="pro-slider" min="0" max="300" value="100" oninput="updateFilter('saturation', this.value)">
-                        </div>
-                        <div class="range-group">
-                            <div class="range-labels">
-                                <span>Contraste</span>
-                                <span id="val-contrast" class="value-display">100%</span>
-                            </div>
-                            <input type="range" id="ctrl-contrast" class="pro-slider" min="0" max="300" value="100" oninput="updateFilter('contrast', this.value)">
-                        </div>
-                        <div class="mode-group">
-                            <button id="mode-normal" class="mode-btn active" onclick="setMode('normal')">Normal</button>
-                            <button id="mode-night" class="mode-btn" onclick="setMode('night')">🌙 Vision Nocturne</button>
-                            <button id="mode-thermal" class="mode-btn" onclick="setMode('thermal')">🔥 Thermique</button>
-                            <button id="mode-surveillance" class="mode-btn" onclick="setMode('surveillance')">👁 Surveillance</button>
-                        </div>
                     </div>
                 </div>
             </div>
@@ -178,13 +138,13 @@ window.addEventListener('DOMContentLoaded', function() {
         <div id="tab-params" class="tab-content">
             <div class="params-grid">
                 <div class="pro-card">
-                    <div class="section-title">📷 Paramètres Caméra (appliqués sur l'ESP)</div>
+                    <div class="section-title">📷 Paramètres Capteur OV2640</div>
                     <div class="range-group">
                         <div class="range-labels">
                             <span>Luminosité capteur (-2 à +2)</span>
                             <span id="val-cam-brightness" class="value-display">1</span>
                         </div>
-                        <input type="range" id="cam-brightness" class="pro-slider" min="-2" max="2" value="1" 
+                        <input type="range" id="cam-brightness" class="pro-slider" min="-2" max="2" value="1" step="1"
                             oninput="document.getElementById('val-cam-brightness').textContent=this.value">
                     </div>
                     <div class="range-group">
@@ -192,7 +152,7 @@ window.addEventListener('DOMContentLoaded', function() {
                             <span>Contraste capteur (-2 à +2)</span>
                             <span id="val-cam-contrast" class="value-display">1</span>
                         </div>
-                        <input type="range" id="cam-contrast" class="pro-slider" min="-2" max="2" value="1"
+                        <input type="range" id="cam-contrast" class="pro-slider" min="-2" max="2" value="1" step="1"
                             oninput="document.getElementById('val-cam-contrast').textContent=this.value">
                     </div>
                     <div class="range-group">
@@ -200,7 +160,7 @@ window.addEventListener('DOMContentLoaded', function() {
                             <span>Saturation capteur (-2 à +2)</span>
                             <span id="val-cam-saturation" class="value-display">1</span>
                         </div>
-                        <input type="range" id="cam-saturation" class="pro-slider" min="-2" max="2" value="1"
+                        <input type="range" id="cam-saturation" class="pro-slider" min="-2" max="2" value="1" step="1"
                             oninput="document.getElementById('val-cam-saturation').textContent=this.value">
                     </div>
                     <div class="range-group">
@@ -208,23 +168,79 @@ window.addEventListener('DOMContentLoaded', function() {
                             <span>Netteté capteur (-2 à +2)</span>
                             <span id="val-cam-sharpness" class="value-display">2</span>
                         </div>
-                        <input type="range" id="cam-sharpness" class="pro-slider" min="-2" max="2" value="2"
+                        <input type="range" id="cam-sharpness" class="pro-slider" min="-2" max="2" value="2" step="1"
                             oninput="document.getElementById('val-cam-sharpness').textContent=this.value">
                     </div>
                     <button onclick="applyCameraParams()" class="pro-btn btn-primary" style="width:100%;margin-top:12px;">
-                        ✓ Appliquer les paramètres caméra
+                        ✓ Appliquer les paramètres capteur
                     </button>
                 </div>
-                
+
+                <div class="pro-card">
+                    <div class="section-title">🎨 Traitement d'image</div>
+                    <div class="range-group">
+                        <div class="range-labels">
+                            <span>Luminosité (-10 à +10)</span>
+                            <span id="val-brightness" class="value-display">0</span>
+                        </div>
+                        <input type="range" id="ctrl-brightness" class="pro-slider" min="-10" max="10" value="0" step="0.5"
+                            oninput="updateFilter('brightness', this.value)">
+                    </div>
+                    <div class="range-group">
+                        <div class="range-labels">
+                            <span>Saturation (-10 à +10)</span>
+                            <span id="val-saturation" class="value-display">0</span>
+                        </div>
+                        <input type="range" id="ctrl-saturation" class="pro-slider" min="-10" max="10" value="0" step="0.5"
+                            oninput="updateFilter('saturation', this.value)">
+                    </div>
+                    <div class="range-group">
+                        <div class="range-labels">
+                            <span>Contraste (-10 à +10)</span>
+                            <span id="val-contrast" class="value-display">0</span>
+                        </div>
+                        <input type="range" id="ctrl-contrast" class="pro-slider" min="-10" max="10" value="0" step="0.5"
+                            oninput="updateFilter('contrast', this.value)">
+                    </div>
+                </div>
+
+                <div class="pro-card">
+                    <div class="section-title">🔃 Miroirs</div>
+                    <div class="toggle-row">
+                        <span class="label-text">Miroir Horizontal</span>
+                        <label class="pro-switch">
+                            <input type="checkbox" id="mirror-h" onchange="toggleMirror('h', this.checked)">
+                            <span class="switch-slider"></span>
+                        </label>
+                    </div>
+                    <div class="toggle-row">
+                        <span class="label-text">Miroir Vertical</span>
+                        <label class="pro-switch">
+                            <input type="checkbox" id="mirror-v" onchange="toggleMirror('v', this.checked)">
+                            <span class="switch-slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="pro-card">
+                    <div class="section-title">🎯 Qualité JPEG Stream</div>
+                    <div class="range-group">
+                        <div class="range-labels">
+                            <span>Qualité (4=meilleur, 30=minimum)</span>
+                            <span id="val-quality" class="value-display">12</span>
+                        </div>
+                        <input type="range" id="ctrl-quality" class="pro-slider" min="4" max="30" value="12"
+                            oninput="updateQuality(this.value)" onchange="setQuality(this.value)">
+                    </div>
+                </div>
+
                 <div class="pro-card">
                     <div class="section-title">ℹ️ Informations</div>
                     <p style="color:var(--text-muted);font-size:13px;line-height:1.6;">
-                        Les paramètres ci-contre sont envoyés directement au capteur OV2640.<br><br>
-                        <strong>Luminosité :</strong> Exposition globale<br>
-                        <strong>Contraste :</strong> Différence clair/foncé<br>
-                        <strong>Saturation :</strong> Intensité des couleurs<br>
-                        <strong>Netteté :</strong> Accentuation des contours<br><br>
-                        Le stream redémarre automatiquement après application.
+                        Les paramètres capteur sont envoyés directement à l'ESP32.<br><br>
+                        Le traitement d'image est appliqué côté navigateur.<br>
+                        Tous les réglages sont sauvegardés automatiquement.<br><br>
+                        <strong>Qualité 4-30:</strong> Plus bas = meilleure qualité, plus haut = plus rapide.
                     </p>
                 </div>
             </div>
@@ -242,8 +258,8 @@ window.addEventListener('DOMContentLoaded', function() {
                         </div>
                     </div>
                     <div id="console-output" class="console-box">
-                        <div class="log-row sys">[SYS] Console PTZ v3.1 initialisée</div>
-                        <div class="log-row sys">[SYS] Moteurs fluides | Accélération trapézoïdale</div>
+                        <div class="log-row sys">[SYS] Console PTZ v4.0 initialisée</div>
+                        <div class="log-row sys">[SYS] Mobile-optimized | SD Card | Auto resolution</div>
                     </div>
                     <div class="console-input-bar">
                         <span class="prompt">&gt;</span>
@@ -269,28 +285,54 @@ window.addEventListener('DOMContentLoaded', function() {
         </div>
     </div>`;
 
-    filterState.mirrorH = localStorage.getItem('ptz_mirror_h') === 'true';
-    filterState.mirrorV = localStorage.getItem('ptz_mirror_v') === 'true';
+    document.getElementById('ctrl-brightness').value = filterState.brightness;
+    document.getElementById('val-brightness').textContent = filterState.brightness;
+    document.getElementById('ctrl-saturation').value = filterState.saturation;
+    document.getElementById('val-saturation').textContent = filterState.saturation;
+    document.getElementById('ctrl-contrast').value = filterState.contrast;
+    document.getElementById('val-contrast').textContent = filterState.contrast;
     document.getElementById('mirror-h').checked = filterState.mirrorH;
     document.getElementById('mirror-v').checked = filterState.mirrorV;
+    document.getElementById('ctrl-quality').value = saved.savedQuality;
+    document.getElementById('val-quality').textContent = saved.savedQuality;
+    applyTransform();
+    applyFilters();
+    initSwipeTabs();
     if (espIp) connectSystem();
 });
 
-// ==========================================
-// CONNEXION
-// ==========================================
+function initSwipeTabs() {
+    let startX = 0;
+    let startY = 0;
+    const tabs = ['studio', 'params', 'terminal'];
+    document.addEventListener('touchstart', function(e) {
+        startX = e.touches[0].clientX;
+        startY = e.touches[0].clientY;
+    }, { passive: true });
+    document.addEventListener('touchend', function(e) {
+        const endX = e.changedTouches[0].clientX;
+        const endY = e.changedTouches[0].clientY;
+        const diffX = startX - endX;
+        const diffY = startY - endY;
+        if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 50) {
+            const currentTab = document.querySelector('.tab-btn.active').id.replace('nav-', '');
+            const idx = tabs.indexOf(currentTab);
+            if (diffX > 0 && idx < tabs.length - 1) switchTab(tabs[idx + 1]);
+            else if (diffX < 0 && idx > 0) switchTab(tabs[idx - 1]);
+        }
+    }, { passive: true });
+}
+
 function connectSystem() {
     const input = document.getElementById('esp-ip');
     espIp = input.value.trim();
     if (!espIp) { logConsole("Entrez une IP", "err"); return; }
     localStorage.setItem('ptz_ip', espIp);
-
     const img = document.getElementById('video-stream');
     const placeholder = document.getElementById('stream-placeholder');
     img.src = `http://${espIp}/stream?t=${Date.now()}`;
     img.style.display = 'block';
     placeholder.style.display = 'none';
-    
     img.onerror = function() {
         updateStatus(false);
         logConsole("Stream erreur - reconnexion...", "err");
@@ -300,13 +342,13 @@ function connectSystem() {
         updateStatus(true);
         logConsole("Stream actif", "success");
     };
-
     fetch(`http://${espIp}/status`, {mode: 'cors', cache: 'no-cache'})
         .then(r => r.json())
         .then(d => {
             isConnected = true;
             updateStatus(true);
             logConsole(`Connecté: ${espIp} | RSSI:${d.rssi}dBm`, "success");
+            if (d.sd_available) logConsole("SD Card détectée", "success");
         })
         .catch(e => {
             updateStatus(false);
@@ -318,23 +360,16 @@ function updateStatus(ok) {
     document.getElementById('conn-status').className = ok ? 'status-dot online' : 'status-dot offline';
 }
 
-// ==========================================
-// PTZ FLUIDE
-// ==========================================
 function ptzPress(axis, steps) {
     if (!isConnected) { logConsole("Non connecté", "err"); return; }
     isHolding = false;
-    
-    // Premier pas immédiat
     sendCmd(axis + ":" + steps);
-    
-    // Après 250ms, mode fin continu
     ptzHoldTimer = setTimeout(() => {
         isHolding = true;
         ptzInterval = setInterval(() => {
             let fineSteps = steps > 0 ? 8 : -8;
             sendCmd(axis + ":" + fineSteps);
-        }, 120); // Plus rapide que 150ms
+        }, 120);
     }, 250);
 }
 
@@ -360,11 +395,9 @@ function sendCmd(cmd) {
     });
 }
 
-// ==========================================
-// RÉSOLUTION & QUALITÉ
-// ==========================================
 function setResolution(res) {
     if (!espIp) { logConsole("IP non définie", "err"); return; }
+    localStorage.setItem('ptz_resolution', res);
     logConsole("Changement résolution: " + res + "...", "sys");
     fetch(`http://${espIp}/setres`, {
         method: 'POST', mode: 'cors',
@@ -374,7 +407,6 @@ function setResolution(res) {
     .then(r => r.text())
     .then(t => {
         logConsole("Résolution: " + res + " | " + t, "success");
-        // Reconnexion stream après changement
         setTimeout(() => {
             const img = document.getElementById('video-stream');
             img.src = `http://${espIp}/stream?t=${Date.now()}`;
@@ -389,6 +421,7 @@ function updateQuality(val) {
 
 function setQuality(val) {
     if (!espIp) return;
+    localStorage.setItem('ptz_quality', val);
     fetch(`http://${espIp}/setquality`, {
         method: 'POST', mode: 'cors',
         headers: {'Content-Type': 'text/plain'},
@@ -397,7 +430,6 @@ function setQuality(val) {
     .then(r => r.text())
     .then(t => {
         logConsole("Qualité JPEG: " + val, "success");
-        // Reconnexion stream
         setTimeout(() => {
             const img = document.getElementById('video-stream');
             img.src = `http://${espIp}/stream?t=${Date.now()}`;
@@ -406,20 +438,14 @@ function setQuality(val) {
     .catch(e => logConsole("Erreur qualité: " + e.message, "err"));
 }
 
-// ==========================================
-// PARAMÈTRES CAMÉRA AVANCÉS
-// ==========================================
 function applyCameraParams() {
     if (!espIp) { logConsole("IP non définie", "err"); return; }
-    
     const b = document.getElementById('cam-brightness').value;
     const c = document.getElementById('cam-contrast').value;
     const s = document.getElementById('cam-saturation').value;
     const sh = document.getElementById('cam-sharpness').value;
-    
     const params = `brightness:${b}|contrast:${c}|saturation:${s}|sharpness:${sh}`;
-    
-    logConsole("Application paramètres caméra...", "sys");
+    logConsole("Application paramètres capteur...", "sys");
     fetch(`http://${espIp}/setparams`, {
         method: 'POST', mode: 'cors',
         headers: {'Content-Type': 'text/plain'},
@@ -428,7 +454,6 @@ function applyCameraParams() {
     .then(r => r.text())
     .then(t => {
         logConsole("Paramètres appliqués: " + t, "success");
-        // Reconnexion stream
         setTimeout(() => {
             const img = document.getElementById('video-stream');
             img.src = `http://${espIp}/stream?t=${Date.now()}`;
@@ -437,13 +462,9 @@ function applyCameraParams() {
     .catch(e => logConsole("Erreur paramètres: " + e.message, "err"));
 }
 
-// ==========================================
-// CAPTURES PHOTO & HD
-// ==========================================
 function capturePhoto() {
     if (!espIp) { logConsole("IP non définie", "err"); return; }
     logConsole("Capture photo en cours...", "sys");
-    
     fetch(`http://${espIp}/capture`, {
         method: 'GET', mode: 'cors', cache: 'no-cache'
     })
@@ -465,8 +486,7 @@ function capturePhoto() {
 
 function captureHD() {
     if (!espIp) { logConsole("IP non définie", "err"); return; }
-    logConsole("Capture HD native en cours...", "sys");
-    
+    logConsole("Capture HD native + SD en cours...", "sys");
     fetch(`http://${espIp}/capturehd`, {
         method: 'GET', mode: 'cors', cache: 'no-cache'
     })
@@ -481,14 +501,11 @@ function captureHD() {
         a.download = `S3PTZ_HD_${Date.now()}.jpg`;
         a.click();
         URL.revokeObjectURL(url);
-        logConsole("Photo HD native sauvegardée!", "success");
+        logConsole("Photo HD native sauvegardée! (SD + navigateur)", "success");
     })
     .catch(e => logConsole("Erreur capture HD: " + e.message, "err"));
 }
 
-// ==========================================
-// ENREGISTREMENT VIDÉO (corrigé avec fetch images)
-// ==========================================
 function toggleRecord() {
     const btn = document.getElementById('btn-record');
     if (!isRecording) { startRecording(); btn.innerHTML = "⏹️ Arrêter"; btn.classList.add('recording'); }
@@ -498,17 +515,13 @@ function toggleRecord() {
 function startRecording() {
     const img = document.getElementById('video-stream');
     if (!img.src || img.style.display === 'none') { logConsole("Flux non actif", "err"); return; }
-    
-    // Création canvas
     recordCanvas = document.createElement('canvas');
     recordCanvas.width = 640;
     recordCanvas.height = 480;
     recordCtx = recordCanvas.getContext('2d');
-    
-    const stream = recordCanvas.captureStream(15); // 15 FPS
+    const stream = recordCanvas.captureStream(15);
     mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9' });
     const chunks = [];
-    
     mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
     mediaRecorder.onstop = () => {
         const blob = new Blob(chunks, { type: 'video/webm' });
@@ -518,12 +531,9 @@ function startRecording() {
         a.click();
         logConsole("Vidéo sauvegardée", "success");
     };
-    
     mediaRecorder.start(200);
     isRecording = true;
     logConsole("Enregistrement démarré (15 FPS)", "sys");
-    
-    // Boucle de rendu
     recordInterval = setInterval(() => {
         if (!recordCtx || !img.complete) return;
         recordCtx.filter = img.style.filter || 'none';
@@ -534,7 +544,7 @@ function startRecording() {
         if (filterState.mirrorV) recordCtx.scale(1, -1);
         recordCtx.drawImage(img, -recordCanvas.width/2, -recordCanvas.height/2);
         recordCtx.restore();
-    }, 66); // ~15 FPS
+    }, 66);
 }
 
 function stopRecording() {
@@ -547,80 +557,51 @@ function stopRecording() {
     logConsole("Enregistrement arrêté", "sys");
 }
 
-// ==========================================
-// MIROIRS & FILTRES
-// ==========================================
 function toggleMirror(axis, checked) {
     if (axis === 'h') filterState.mirrorH = checked;
     else filterState.mirrorV = checked;
-    localStorage.setItem('ptz_mirror_' + axis, checked);
+    saveToStorage();
     applyTransform();
 }
 
 function applyTransform() {
-    const img = document.getElementById('video-stream');
-    if (!img) return;
+    const wrapper = document.getElementById('stream-wrapper');
+    if (!wrapper) return;
     let transform = `rotate(${filterState.rotation}deg)`;
     if (filterState.mirrorH) transform += ' scaleX(-1)';
     if (filterState.mirrorV) transform += ' scaleY(-1)';
-    img.style.transform = transform;
+    wrapper.style.transform = transform;
 }
 
 function updateFilter(type, value) {
-    filterState[type] = parseInt(value);
-    document.getElementById('val-' + type).textContent = value + '%';
+    filterState[type] = parseFloat(value);
+    document.getElementById('val-' + type).textContent = value;
+    saveToStorage();
     applyFilters();
 }
 
 function applyFilters() {
     const img = document.getElementById('video-stream');
     if (!img) return;
-    let filter = `brightness(${filterState.brightness}%) saturate(${filterState.saturation}%) contrast(${filterState.contrast}%)`;
-    switch(filterState.mode) {
-        case 'night': filter += ' grayscale(100%) brightness(180%) contrast(150%)'; break;
-        case 'thermal': filter += ' grayscale(100%) sepia(100%) hue-rotate(-50deg) saturate(300%) contrast(180%) brightness(120%)'; break;
-        case 'surveillance': filter += ' grayscale(100%) contrast(300%) brightness(80%)'; break;
-    }
-    img.style.filter = filter;
-}
-
-function setMode(mode) {
-    filterState.mode = mode;
-    document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
-    document.getElementById('mode-' + mode).classList.add('active');
-    switch(mode) {
-        case 'night': setSlider('brightness', 180); setSlider('saturation', 0); setSlider('contrast', 150); break;
-        case 'thermal': setSlider('brightness', 120); setSlider('saturation', 300); setSlider('contrast', 180); break;
-        case 'surveillance': setSlider('brightness', 80); setSlider('saturation', 0); setSlider('contrast', 300); break;
-        default: setSlider('brightness', 100); setSlider('saturation', 100); setSlider('contrast', 100); break;
-    }
-    applyFilters();
-}
-
-function setSlider(type, value) {
-    filterState[type] = value;
-    const slider = document.getElementById('ctrl-' + type);
-    const display = document.getElementById('val-' + type);
-    if (slider) slider.value = value;
-    if (display) display.textContent = value + '%';
+    const b = 100 + (filterState.brightness * 10);
+    const s = 100 + (filterState.saturation * 10);
+    const c = 100 + (filterState.contrast * 10);
+    img.style.filter = `brightness(${b}%) saturate(${s}%) contrast(${c}%)`;
 }
 
 function rotateStream() {
     filterState.rotation = (filterState.rotation + 90) % 360;
+    saveToStorage();
     applyTransform();
 }
 
-// ==========================================
-// CONSOLE
-// ==========================================
 function logConsole(msg, type) {
     const out = document.getElementById('console-output');
     if (!out) return;
     const row = document.createElement('div');
     row.className = 'log-row ' + (type || '');
     const time = new Date().toLocaleTimeString('fr-FR', {hour12:false});
-    const line = `[${time}] ${msg}`;
-    row.textContent = line;
+    row.textContent = `[${time}] ${msg}`;
     out.appendChild(row);
     out.scrollTop = out.scrollHeight;
     console.log(`[PTZ-${type||'info'}] ${msg}`);
@@ -643,7 +624,6 @@ function executeCommand(val) {
     const cmd = val.trim().toLowerCase();
     input.value = '';
     if (!cmd) return;
-
     switch(cmd) {
         case 'clear': clearLogs(); return;
         case 'home': sendCmd('HOME'); logConsole("HOME envoyé", "cmd"); return;
@@ -654,7 +634,7 @@ function executeCommand(val) {
         case 'down': sendCmd('V:-64'); logConsole("Tilt bas rapide", "cmd"); return;
         case 'status':
             fetch(`http://${espIp}/status`, {mode:'cors'}).then(r=>r.json()).then(d=>{
-                logConsole(`IP:${d.ip} RSSI:${d.rssi}dBm Uptime:${d.uptime}s Stream:${d.stream_active?'ON':'OFF'}`, "sys");
+                logConsole(`IP:${d.ip} RSSI:${d.rssi}dBm Uptime:${d.uptime}s Stream:${d.stream_active?'ON':'OFF'} SD:${d.sd_available?'OK':'N/A'}`, "sys");
             }).catch(e=>logConsole("Erreur status: "+e.message, "err"));
             return;
         default: logConsole("Inconnu: " + cmd, "err");
