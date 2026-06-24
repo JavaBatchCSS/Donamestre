@@ -1,7 +1,8 @@
 // =============================================================================
-// S3-PRO PTZ -- APP.JS v4.2
+// S3-PRO PTZ -- APP.JS v4.3
 // Mobile-optimized | SD Gallery | Touch >=44px | PTZ >=56px
 // Swipe tabs | localStorage persistent | Logo from URL
+// Photos apply filters (rotation, mirrors, brightness, saturation, contrast) via canvas
 // =============================================================================
 
 var espIp = window.location.hostname;
@@ -60,7 +61,6 @@ window.addEventListener("DOMContentLoaded", function() {
 
     root.innerHTML = buildHTML(saved);
 
-    // Restore controls
     var el;
     if (el = document.getElementById("ctrl-brightness")) { el.value = filterState.brightness; document.getElementById("val-brightness").textContent = filterState.brightness; }
     if (el = document.getElementById("ctrl-saturation")) { el.value = filterState.saturation; document.getElementById("val-saturation").textContent = filterState.saturation; }
@@ -303,8 +303,8 @@ function buildHTML(saved) {
                         </div>
                     </div>
                     <div id="console-output" class="console-box">
-                        <div class="log-row sys">[SYS] Console PTZ v4.2 initialisee</div>
-                        <div class="log-row sys">[SYS] Dual-Core | SD_MMC 1-bit | Auto resolution</div>
+                        <div class="log-row sys">[SYS] Console PTZ v4.3 initialisee</div>
+                        <div class="log-row sys">[SYS] Dual-Core | SD_MMC 1-bit | Filters on capture</div>
                     </div>
                     <div class="console-input-bar">
                         <span class="prompt">&gt;</span>
@@ -385,6 +385,7 @@ function connectSystem() {
             updateStatus(true);
             logConsole("Connecte: " + espIp + " | RSSI:" + d.rssi + "dBm", "success");
             if (d.sd_available) logConsole("SD Card detectee", "success");
+            else logConsole("SD Card non detectee", "err");
         })
         .catch(function(e) {
             updateStatus(false);
@@ -511,36 +512,73 @@ function applyCameraParams() {
 }
 
 // =============================================================================
-// CAPTURE PHOTO (instant frame from buffer)
+// APPLY FILTERS TO IMAGE VIA CANVAS
+// Returns a Blob callback with the processed JPEG
+// =============================================================================
+function applyFiltersToImage(srcImg, callback) {
+    var canvas = document.createElement("canvas");
+    var ctx = canvas.getContext("2d");
+
+    // Use natural dimensions
+    var w = srcImg.naturalWidth || srcImg.width || 640;
+    var h = srcImg.naturalHeight || srcImg.height || 480;
+
+    // Handle rotation: swap dimensions if needed
+    if (filterState.rotation === 90 || filterState.rotation === 270) {
+        canvas.width = h;
+        canvas.height = w;
+    } else {
+        canvas.width = w;
+        canvas.height = h;
+    }
+
+    // Build filter string for CSS filters
+    var b = 100 + (filterState.brightness * 10);
+    var s = 100 + (filterState.saturation * 10);
+    var c = 100 + (filterState.contrast * 10);
+    ctx.filter = "brightness(" + b + "%) saturate(" + s + "%) contrast(" + c + "%)";
+
+    ctx.save();
+    ctx.translate(canvas.width / 2, canvas.height / 2);
+    ctx.rotate(filterState.rotation * Math.PI / 180);
+    if (filterState.mirrorH) ctx.scale(-1, 1);
+    if (filterState.mirrorV) ctx.scale(1, -1);
+    ctx.drawImage(srcImg, -w / 2, -h / 2);
+    ctx.restore();
+
+    canvas.toBlob(function(blob) {
+        callback(blob);
+    }, "image/jpeg", 0.92);
+}
+
+// =============================================================================
+// CAPTURE PHOTO (instant frame with filters applied)
 // =============================================================================
 function capturePhoto() {
     if (!espIp) { logConsole("IP non definie", "err"); return; }
-    logConsole("Capture photo en cours...", "sys");
-    fetch("http://" + espIp + "/capture", {
-        method: "GET", mode: "cors", cache: "no-cache"
-    })
-    .then(function(r) {
-        if (!r.ok) throw new Error("HTTP " + r.status);
-        return r.blob();
-    })
-    .then(function(blob) {
+    var img = document.getElementById("video-stream");
+    if (!img || img.style.display === "none" || !img.complete) {
+        logConsole("Flux non actif, impossible de capturer", "err");
+        return;
+    }
+    logConsole("Capture photo avec filtres...", "sys");
+    applyFiltersToImage(img, function(blob) {
         var url = URL.createObjectURL(blob);
         var a = document.createElement("a");
         a.href = url;
         a.download = "S3PTZ_" + Date.now() + ".jpg";
         a.click();
         URL.revokeObjectURL(url);
-        logConsole("Photo sauvegardee!", "success");
-    })
-    .catch(function(e) { logConsole("Erreur photo: " + e.message, "err"); });
+        logConsole("Photo sauvegardee avec filtres!", "success");
+    });
 }
 
 // =============================================================================
-// CAPTURE HD
+// CAPTURE HD (HD from server + filters applied client-side)
 // =============================================================================
 function captureHD() {
     if (!espIp) { logConsole("IP non definie", "err"); return; }
-    logConsole("Capture HD native + SD en cours...", "sys");
+    logConsole("Capture HD native + filtres...", "sys");
     fetch("http://" + espIp + "/capturehd", {
         method: "GET", mode: "cors", cache: "no-cache"
     })
@@ -549,13 +587,20 @@ function captureHD() {
         return r.blob();
     })
     .then(function(blob) {
-        var url = URL.createObjectURL(blob);
-        var a = document.createElement("a");
-        a.href = url;
-        a.download = "S3PTZ_HD_" + Date.now() + ".jpg";
-        a.click();
-        URL.revokeObjectURL(url);
-        logConsole("Photo HD native sauvegardee! (SD + navigateur)", "success");
+        // Load blob as image, apply filters via canvas, then save
+        var img = new Image();
+        img.onload = function() {
+            applyFiltersToImage(img, function(processedBlob) {
+                var url = URL.createObjectURL(processedBlob);
+                var a = document.createElement("a");
+                a.href = url;
+                a.download = "S3PTZ_HD_" + Date.now() + ".jpg";
+                a.click();
+                URL.revokeObjectURL(url);
+                logConsole("Photo HD avec filtres sauvegardee!", "success");
+            });
+        };
+        img.src = URL.createObjectURL(blob);
     })
     .catch(function(e) { logConsole("Erreur capture HD: " + e.message, "err"); });
 }
@@ -664,8 +709,15 @@ function loadGallery() {
     if (!grid) return;
     grid.innerHTML = "<p style='color:var(--text-muted);font-size:14px;'>Chargement...</p>";
     fetch("http://" + espIp + "/gallery", { mode: "cors", cache: "no-cache" })
-        .then(function(r) { return r.json(); })
+        .then(function(r) {
+            if (!r.ok) throw new Error("HTTP " + r.status);
+            return r.json();
+        })
         .then(function(files) {
+            if (!Array.isArray(files)) {
+                grid.innerHTML = "<p style='color:var(--text-muted);font-size:14px;'>Reponse invalide du serveur.</p>";
+                return;
+            }
             if (files.length === 0) {
                 grid.innerHTML = "<p style='color:var(--text-muted);font-size:14px;'>Aucune photo sur la carte SD.</p>";
                 return;
@@ -684,6 +736,7 @@ function loadGallery() {
         })
         .catch(function(e) {
             grid.innerHTML = "<p style='color:var(--text-muted);font-size:14px;'>Erreur: " + e.message + "</p>";
+            logConsole("Erreur galerie: " + e.message, "err");
         });
 }
 
