@@ -1,5 +1,5 @@
 /* ============================================================================
-   S3-PRO PTZ -- STYLE.CSS v4.1
+   S3-PRO PTZ -- STYLE.CSS v4.2
    Mobile-first | Touch-optimized | Dark theme
    Touch targets >= 44px | PTZ buttons >= 56px
    Swipe tabs | overscroll-behavior-y: none
@@ -61,26 +61,24 @@ body {
     gap: 10px;
 }
 
-.pro-logo {
-    font-size: 20px;
-    font-weight: 700;
-    letter-spacing: 1px;
-    margin: 0;
+.logo-box {
     display: flex;
     align-items: center;
     gap: 8px;
 }
 
 .logo-img {
-    height: 32px;
+    height: 36px;
     width: auto;
     display: block;
+    max-width: 180px;
 }
 
-.logo-fallback {
+.logo-text {
     font-size: 20px;
     font-weight: 700;
     letter-spacing: 1px;
+    margin: 0;
 }
 
 .sub-brand {
@@ -799,8 +797,11 @@ body {
         padding-bottom: 10px;
         margin-bottom: 12px;
     }
-    .pro-logo {
+    .logo-text {
         font-size: 18px;
+    }
+    .logo-img {
+        height: 28px;
     }
     .connection-zone {
         width: 100%;
