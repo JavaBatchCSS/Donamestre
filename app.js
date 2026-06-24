@@ -1,7 +1,7 @@
 // =============================================================================
-// S3-PRO PTZ -- APP.JS v4.1
+// S3-PRO PTZ -- APP.JS v4.2
 // Mobile-optimized | SD Gallery | Touch >=44px | PTZ >=56px
-// Swipe tabs | localStorage persistent | No inline CSS/JS in firmware
+// Swipe tabs | localStorage persistent | Logo from URL
 // =============================================================================
 
 var espIp = window.location.hostname;
@@ -61,16 +61,13 @@ window.addEventListener("DOMContentLoaded", function() {
     root.innerHTML = buildHTML(saved);
 
     // Restore controls
-    document.getElementById("ctrl-brightness").value = filterState.brightness;
-    document.getElementById("val-brightness").textContent = filterState.brightness;
-    document.getElementById("ctrl-saturation").value = filterState.saturation;
-    document.getElementById("val-saturation").textContent = filterState.saturation;
-    document.getElementById("ctrl-contrast").value = filterState.contrast;
-    document.getElementById("val-contrast").textContent = filterState.contrast;
-    document.getElementById("mirror-h").checked = filterState.mirrorH;
-    document.getElementById("mirror-v").checked = filterState.mirrorV;
-    document.getElementById("ctrl-quality").value = saved.savedQuality;
-    document.getElementById("val-quality").textContent = saved.savedQuality;
+    var el;
+    if (el = document.getElementById("ctrl-brightness")) { el.value = filterState.brightness; document.getElementById("val-brightness").textContent = filterState.brightness; }
+    if (el = document.getElementById("ctrl-saturation")) { el.value = filterState.saturation; document.getElementById("val-saturation").textContent = filterState.saturation; }
+    if (el = document.getElementById("ctrl-contrast")) { el.value = filterState.contrast; document.getElementById("val-contrast").textContent = filterState.contrast; }
+    if (el = document.getElementById("mirror-h")) el.checked = filterState.mirrorH;
+    if (el = document.getElementById("mirror-v")) el.checked = filterState.mirrorV;
+    if (el = document.getElementById("ctrl-quality")) { el.value = saved.savedQuality; document.getElementById("val-quality").textContent = saved.savedQuality; }
 
     applyTransform();
     applyFilters();
@@ -82,15 +79,16 @@ window.addEventListener("DOMContentLoaded", function() {
 // HTML BUILDER
 // =============================================================================
 function buildHTML(saved) {
-    const logoUrl = "https://javabatchcss.github.io/Donamestre/Donamestre.png";
+    var logoUrl = "https://javabatchcss.github.io/Donamestre/Donamestre.png";
     return `
     <div class="app-container">
         <header class="pro-header">
             <div class="brand-zone">
-                <h1 class="pro-logo">
-                    <img src="${logoUrl}" alt="S3-PRO PTZ" class="logo-img" onerror="this.style.display='none';this.nextElementSibling.style.display='inline'">
-                    <span class="logo-fallback" style="display:none">S3-PRO <span style="color:#6366f1">PTZ</span></span>
-                </h1>
+                <div class="logo-box">
+                    <img src="${logoUrl}" alt="S3-PRO PTZ" class="logo-img" id="logo-img"
+                        onerror="this.style.display='none';document.getElementById('logo-text').style.display='block'">
+                    <div id="logo-text" class="logo-text" style="display:none">S3-PRO <span style="color:#6366f1">PTZ</span></div>
+                </div>
                 <div class="sub-brand">PAN/TILT DUAL-AXIS MONITORING</div>
             </div>
             <div class="connection-zone">
@@ -286,7 +284,7 @@ function buildHTML(saved) {
                 <div class="pro-card">
                     <div class="section-title">Photos sur carte SD</div>
                     <div id="gallery-grid" class="gallery-grid">
-                        <p style="color:var(--text-muted);font-size:14px;">Chargement...</p>
+                        <p style="color:var(--text-muted);font-size:14px;">Cliquez sur l'onglet pour charger...</p>
                     </div>
                 </div>
             </div>
@@ -305,7 +303,7 @@ function buildHTML(saved) {
                         </div>
                     </div>
                     <div id="console-output" class="console-box">
-                        <div class="log-row sys">[SYS] Console PTZ v4.1 initialisee</div>
+                        <div class="log-row sys">[SYS] Console PTZ v4.2 initialisee</div>
                         <div class="log-row sys">[SYS] Dual-Core | SD_MMC 1-bit | Auto resolution</div>
                     </div>
                     <div class="console-input-bar">
@@ -337,21 +335,21 @@ function buildHTML(saved) {
 // SWIPE TABS
 // =============================================================================
 function initSwipeTabs() {
-    let startX = 0;
-    let startY = 0;
-    const tabs = ["studio", "params", "gallery", "terminal"];
+    var startX = 0;
+    var startY = 0;
+    var tabs = ["studio", "params", "gallery", "terminal"];
     document.addEventListener("touchstart", function(e) {
         startX = e.touches[0].clientX;
         startY = e.touches[0].clientY;
     }, { passive: true });
     document.addEventListener("touchend", function(e) {
-        const endX = e.changedTouches[0].clientX;
-        const endY = e.changedTouches[0].clientY;
-        const diffX = startX - endX;
-        const diffY = startY - endY;
+        var endX = e.changedTouches[0].clientX;
+        var endY = e.changedTouches[0].clientY;
+        var diffX = startX - endX;
+        var diffY = startY - endY;
         if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 50) {
-            const currentTab = document.querySelector(".tab-btn.active").id.replace("nav-", "");
-            const idx = tabs.indexOf(currentTab);
+            var currentTab = document.querySelector(".tab-btn.active").id.replace("nav-", "");
+            var idx = tabs.indexOf(currentTab);
             if (diffX > 0 && idx < tabs.length - 1) switchTab(tabs[idx + 1]);
             else if (diffX < 0 && idx > 0) switchTab(tabs[idx - 1]);
         }
@@ -362,12 +360,12 @@ function initSwipeTabs() {
 // CONNECTION
 // =============================================================================
 function connectSystem() {
-    const input = document.getElementById("esp-ip");
+    var input = document.getElementById("esp-ip");
     espIp = input.value.trim();
     if (!espIp) { logConsole("Entrez une IP", "err"); return; }
     localStorage.setItem("ptz_ip", espIp);
-    const img = document.getElementById("video-stream");
-    const placeholder = document.getElementById("stream-placeholder");
+    var img = document.getElementById("video-stream");
+    var placeholder = document.getElementById("stream-placeholder");
     img.src = "http://" + espIp + "/stream?t=" + Date.now();
     img.style.display = "block";
     placeholder.style.display = "none";
@@ -381,14 +379,14 @@ function connectSystem() {
         logConsole("Stream actif", "success");
     };
     fetch("http://" + espIp + "/status", {mode: "cors", cache: "no-cache"})
-        .then(r => r.json())
-        .then(d => {
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
             isConnected = true;
             updateStatus(true);
             logConsole("Connecte: " + espIp + " | RSSI:" + d.rssi + "dBm", "success");
             if (d.sd_available) logConsole("SD Card detectee", "success");
         })
-        .catch(e => {
+        .catch(function(e) {
             updateStatus(false);
             logConsole("Connexion API: " + e.message, "err");
         });
@@ -448,15 +446,15 @@ function setResolution(res) {
         headers: {"Content-Type": "text/plain"},
         body: res, cache: "no-cache"
     })
-    .then(r => r.text())
-    .then(t => {
+    .then(function(r) { return r.text(); })
+    .then(function(t) {
         logConsole("Resolution: " + res + " | " + t, "success");
         setTimeout(function() {
-            const img = document.getElementById("video-stream");
+            var img = document.getElementById("video-stream");
             img.src = "http://" + espIp + "/stream?t=" + Date.now();
         }, 1000);
     })
-    .catch(e => logConsole("Erreur resolution: " + e.message, "err"));
+    .catch(function(e) { logConsole("Erreur resolution: " + e.message, "err"); });
 }
 
 // =============================================================================
@@ -474,15 +472,15 @@ function setQuality(val) {
         headers: {"Content-Type": "text/plain"},
         body: val, cache: "no-cache"
     })
-    .then(r => r.text())
-    .then(t => {
+    .then(function(r) { return r.text(); })
+    .then(function(t) {
         logConsole("Qualite JPEG: " + val, "success");
         setTimeout(function() {
-            const img = document.getElementById("video-stream");
+            var img = document.getElementById("video-stream");
             img.src = "http://" + espIp + "/stream?t=" + Date.now();
         }, 1000);
     })
-    .catch(e => logConsole("Erreur qualite: " + e.message, "err"));
+    .catch(function(e) { logConsole("Erreur qualite: " + e.message, "err"); });
 }
 
 // =============================================================================
@@ -501,19 +499,19 @@ function applyCameraParams() {
         headers: {"Content-Type": "text/plain"},
         body: params, cache: "no-cache"
     })
-    .then(r => r.text())
-    .then(t => {
+    .then(function(r) { return r.text(); })
+    .then(function(t) {
         logConsole("Parametres appliques: " + t, "success");
         setTimeout(function() {
-            const img = document.getElementById("video-stream");
+            var img = document.getElementById("video-stream");
             img.src = "http://" + espIp + "/stream?t=" + Date.now();
         }, 1500);
     })
-    .catch(e => logConsole("Erreur parametres: " + e.message, "err"));
+    .catch(function(e) { logConsole("Erreur parametres: " + e.message, "err"); });
 }
 
 // =============================================================================
-// CAPTURE PHOTO (instant frame)
+// CAPTURE PHOTO (instant frame from buffer)
 // =============================================================================
 function capturePhoto() {
     if (!espIp) { logConsole("IP non definie", "err"); return; }
@@ -521,11 +519,11 @@ function capturePhoto() {
     fetch("http://" + espIp + "/capture", {
         method: "GET", mode: "cors", cache: "no-cache"
     })
-    .then(r => {
+    .then(function(r) {
         if (!r.ok) throw new Error("HTTP " + r.status);
         return r.blob();
     })
-    .then(blob => {
+    .then(function(blob) {
         var url = URL.createObjectURL(blob);
         var a = document.createElement("a");
         a.href = url;
@@ -534,7 +532,7 @@ function capturePhoto() {
         URL.revokeObjectURL(url);
         logConsole("Photo sauvegardee!", "success");
     })
-    .catch(e => logConsole("Erreur photo: " + e.message, "err"));
+    .catch(function(e) { logConsole("Erreur photo: " + e.message, "err"); });
 }
 
 // =============================================================================
@@ -546,11 +544,11 @@ function captureHD() {
     fetch("http://" + espIp + "/capturehd", {
         method: "GET", mode: "cors", cache: "no-cache"
     })
-    .then(r => {
+    .then(function(r) {
         if (!r.ok) throw new Error("HTTP " + r.status);
         return r.blob();
     })
-    .then(blob => {
+    .then(function(blob) {
         var url = URL.createObjectURL(blob);
         var a = document.createElement("a");
         a.href = url;
@@ -559,7 +557,7 @@ function captureHD() {
         URL.revokeObjectURL(url);
         logConsole("Photo HD native sauvegardee! (SD + navigateur)", "success");
     })
-    .catch(e => logConsole("Erreur capture HD: " + e.message, "err"));
+    .catch(function(e) { logConsole("Erreur capture HD: " + e.message, "err"); });
 }
 
 // =============================================================================
@@ -666,8 +664,8 @@ function loadGallery() {
     if (!grid) return;
     grid.innerHTML = "<p style='color:var(--text-muted);font-size:14px;'>Chargement...</p>";
     fetch("http://" + espIp + "/gallery", { mode: "cors", cache: "no-cache" })
-        .then(r => r.json())
-        .then(files => {
+        .then(function(r) { return r.json(); })
+        .then(function(files) {
             if (files.length === 0) {
                 grid.innerHTML = "<p style='color:var(--text-muted);font-size:14px;'>Aucune photo sur la carte SD.</p>";
                 return;
@@ -684,7 +682,7 @@ function loadGallery() {
             }
             grid.innerHTML = html;
         })
-        .catch(e => {
+        .catch(function(e) {
             grid.innerHTML = "<p style='color:var(--text-muted);font-size:14px;'>Erreur: " + e.message + "</p>";
         });
 }
@@ -736,9 +734,9 @@ function executeCommand(val) {
         case "up": sendCmd("V:64"); logConsole("Tilt haut rapide", "cmd"); return;
         case "down": sendCmd("V:-64"); logConsole("Tilt bas rapide", "cmd"); return;
         case "status":
-            fetch("http://" + espIp + "/status", {mode: "cors"}).then(r => r.json()).then(d => {
+            fetch("http://" + espIp + "/status", {mode: "cors"}).then(function(r) { return r.json(); }).then(function(d) {
                 logConsole("IP:" + d.ip + " RSSI:" + d.rssi + "dBm Uptime:" + d.uptime + "s Stream:" + (d.stream_active ? "ON" : "OFF") + " SD:" + (d.sd_available ? "OK" : "N/A"), "sys");
-            }).catch(e => logConsole("Erreur status: " + e.message, "err"));
+            }).catch(function(e) { logConsole("Erreur status: " + e.message, "err"); });
             return;
         default: logConsole("Inconnu: " + cmd, "err");
     }
