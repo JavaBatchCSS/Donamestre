@@ -1,8 +1,7 @@
 // =============================================================================
-// S3-PRO PTZ -- APP.JS v4.4
-// Mobile-optimized | SD Gallery | Touch >=44px | PTZ >=56px
-// Swipe tabs | localStorage persistent | Thermal & Power UI
-// Camera ON/OFF toggle | WiFi TX control | Temperature display
+// S3-PRO PTZ -- APP.JS v4.4-fix3
+// Simplified: WiFi always ON, camera ON/OFF only
+// Explicit camera power button before stream
 // =============================================================================
 
 var espIp = window.location.hostname;
@@ -54,14 +53,10 @@ function saveToStorage() {
     localStorage.setItem("ptz_mirror_v", filterState.mirrorV);
 }
 
-// =============================================================================
-// DOM READY
-// =============================================================================
 window.addEventListener("DOMContentLoaded", function() {
     const saved = loadFromStorage();
     const root = document.getElementById("app-root");
     if (!root) return;
-
     root.innerHTML = buildHTML(saved);
 
     var el;
@@ -75,12 +70,11 @@ window.addEventListener("DOMContentLoaded", function() {
     applyTransform();
     applyFilters();
     initSwipeTabs();
-    if (espIp) connectSystem();
+
+    // Auto-connect API (not stream) to check status
+    if (espIp) checkSystemStatus();
 });
 
-// =============================================================================
-// HTML BUILDER
-// =============================================================================
 function buildHTML(saved) {
     var logoUrl = "https://javabatchcss.github.io/Donamestre/Donamestre.png";
     return `
@@ -96,12 +90,14 @@ function buildHTML(saved) {
             </div>
             <div class="connection-zone">
                 <input type="text" id="esp-ip" class="pro-input" placeholder="IP ESP32" value="${espIp}">
-                <button onclick="connectSystem()" class="pro-btn btn-primary">Connecter</button>
+                <button onclick="checkSystemStatus()" class="pro-btn btn-primary">Connecter</button>
                 <span id="conn-status" class="status-dot offline">&#9679;</span>
             </div>
-            <div class="power-zone" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-                <span id="temp-badge" class="temp-badge" style="font-size:12px;color:#64748b;background:rgba(255,255,255,0.05);padding:4px 8px;border-radius:6px;border:1px solid transparent;">--°C</span>
-                <button id="cam-toggle" onclick="toggleCamera()" class="pro-btn" style="font-size:12px;padding:6px 10px;min-height:32px;">Caméra OFF</button>
+            <div class="power-zone" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px;width:100%;">
+                <button id="cam-toggle" onclick="toggleCamera()" class="pro-btn btn-danger" style="font-size:13px;padding:8px 14px;min-height:44px;flex:1;">
+                    &#9679; Allumer Caméra
+                </button>
+                <span id="temp-badge" class="temp-badge" style="font-size:12px;color:#64748b;background:rgba(255,255,255,0.05);padding:6px 10px;border-radius:6px;border:1px solid transparent;white-space:nowrap;">--°C</span>
             </div>
         </header>
 
@@ -117,11 +113,18 @@ function buildHTML(saved) {
             <div class="studio-grid">
                 <div class="video-zone">
                     <div class="video-viewport" id="video-viewport">
-                        <div class="status-badge secure" id="cam-badge">&#9679; VEILLE</div>
+                        <div class="status-badge" id="cam-badge" style="left:10px;background:rgba(239,68,68,0.1);color:#ef4444;border:1px solid rgba(239,68,68,0.2);">&#9679; CAMERA OFF</div>
                         <div id="stream-wrapper" class="stream-wrapper">
                             <img id="video-stream" src="" alt="En attente..." style="display:none">
                         </div>
-                        <div id="stream-placeholder" class="stream-placeholder">Entrez l'IP et cliquez Connecter<br>La caméra est désactivée par défaut</div>
+                        <div id="stream-placeholder" class="stream-placeholder">
+                            <div style="text-align:center;">
+                                <div style="font-size:48px;margin-bottom:12px;">&#128247;</div>
+                                <div style="font-size:15px;font-weight:600;margin-bottom:6px;">Caméra en veille</div>
+                                <div style="font-size:13px;color:var(--text-muted);margin-bottom:16px;">Cliquez "Allumer Caméra" pour activer le flux</div>
+                                <button onclick="toggleCamera()" class="pro-btn btn-primary" style="padding:12px 24px;font-size:14px;">Allumer la Caméra</button>
+                            </div>
+                        </div>
                     </div>
                     <div class="action-bar">
                         <button onclick="rotateStream()" class="pro-btn">Rotation</button>
@@ -274,20 +277,20 @@ function buildHTML(saved) {
                 </div>
 
                 <div class="pro-card">
-                    <div class="section-title">Gestion Energie & Thermique</div>
+                    <div class="section-title">Gestion Thermique</div>
                     <div class="range-group">
                         <div class="range-labels">
                             <span>Puissance WiFi TX (dBm)</span>
-                            <span id="val-wifipower" class="value-display">11</span>
+                            <span id="val-wifipower" class="value-display">19</span>
                         </div>
-                        <input type="range" id="ctrl-wifipower" class="pro-slider" min="8" max="20" value="11" step="1"
+                        <input type="range" id="ctrl-wifipower" class="pro-slider" min="8" max="20" value="19" step="1"
                             oninput="document.getElementById('val-wifipower').textContent=this.value" onchange="setWiFiPower(this.value)">
                     </div>
-                    <button onclick="forceEcoMode()" class="pro-btn" style="width:100%;margin-top:10px;">Forcer Mode Éco</button>
+                    <button onclick="forceCameraOff()" class="pro-btn btn-danger" style="width:100%;margin-top:10px;">Eteindre Caméra (Refroidir)</button>
                     <p style="color:var(--text-muted);font-size:12px;margin-top:8px;line-height:1.5;">
-                        Mode Éco : CPU 160MHz, WiFi MODEM_SLEEP, caméra OFF.<br>
-                        La caméra s'allume automatiquement sur Stream/Capture.<br>
-                        Désactivation auto après 5 min d'inactivité.
+                        La caméra est la principale source de chaleur.<br>
+                        Eteignez-la quand vous n'en avez pas besoin.<br>
+                        Auto-extinction après 5 min d'inactivité.
                     </p>
                 </div>
 
@@ -328,8 +331,8 @@ function buildHTML(saved) {
                         </div>
                     </div>
                     <div id="console-output" class="console-box">
-                        <div class="log-row sys">[SYS] Console PTZ v4.4 initialisee</div>
-                        <div class="log-row sys">[SYS] Thermal & Power Management active</div>
+                        <div class="log-row sys">[SYS] Console PTZ v4.4-fix3</div>
+                        <div class="log-row sys">[SYS] Camera ON/OFF | WiFi always ON</div>
                     </div>
                     <div class="console-input-bar">
                         <span class="prompt">&gt;</span>
@@ -342,7 +345,7 @@ function buildHTML(saved) {
                     </div>
                     <div class="command-list">
                         <div class="cmd-item" onclick="executeCommand('home')"><span class="cmd-syntax">home</span><span class="cmd-desc">Recalage complet</span></div>
-                        <div class="cmd-item" onclick="executeCommand('center')"><span class="cmd-syntax">center</span><span class="cmd-desc">Position 1/4 (vue)</span></div>
+                        <div class="cmd-item" onclick="executeCommand('center')"><span class="cmd-syntax">center</span><span class="cmd-desc">Position 1/4</span></div>
                         <div class="cmd-item" onclick="executeCommand('left')"><span class="cmd-syntax">left</span><span class="cmd-desc">Pan gauche</span></div>
                         <div class="cmd-item" onclick="executeCommand('right')"><span class="cmd-syntax">right</span><span class="cmd-desc">Pan droite</span></div>
                         <div class="cmd-item" onclick="executeCommand('up')"><span class="cmd-syntax">up</span><span class="cmd-desc">Tilt haut</span></div>
@@ -358,22 +361,15 @@ function buildHTML(saved) {
     </div>`;
 }
 
-// =============================================================================
-// SWIPE TABS
-// =============================================================================
 function initSwipeTabs() {
-    var startX = 0;
-    var startY = 0;
+    var startX = 0, startY = 0;
     var tabs = ["studio", "params", "gallery", "terminal"];
     document.addEventListener("touchstart", function(e) {
-        startX = e.touches[0].clientX;
-        startY = e.touches[0].clientY;
+        startX = e.touches[0].clientX; startY = e.touches[0].clientY;
     }, { passive: true });
     document.addEventListener("touchend", function(e) {
-        var endX = e.changedTouches[0].clientX;
-        var endY = e.changedTouches[0].clientY;
-        var diffX = startX - endX;
-        var diffY = startY - endY;
+        var diffX = startX - e.changedTouches[0].clientX;
+        var diffY = startY - e.changedTouches[0].clientY;
         if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 50) {
             var currentTab = document.querySelector(".tab-btn.active").id.replace("nav-", "");
             var idx = tabs.indexOf(currentTab);
@@ -384,47 +380,28 @@ function initSwipeTabs() {
 }
 
 // =============================================================================
-// CONNECTION
+// STATUS CHECK (no stream yet)
 // =============================================================================
-function connectSystem() {
+function checkSystemStatus() {
     var input = document.getElementById("esp-ip");
     espIp = input.value.trim();
     if (!espIp) { logConsole("Entrez une IP", "err"); return; }
     localStorage.setItem("ptz_ip", espIp);
-    var img = document.getElementById("video-stream");
-    var placeholder = document.getElementById("stream-placeholder");
-    img.src = "http://" + espIp + "/stream?t=" + Date.now();
-    img.style.display = "block";
-    placeholder.style.display = "none";
-    img.onerror = function() {
-        updateStatus(false);
-        logConsole("Stream erreur - reconnexion...", "err");
-        setTimeout(connectSystem, 3000);
-    };
-    img.onload = function() {
-        updateStatus(true);
-        logConsole("Stream actif", "success");
-    };
+
     fetch("http://" + espIp + "/status", {mode: "cors", cache: "no-cache"})
         .then(function(r) { return r.json(); })
         .then(function(d) {
             isConnected = true;
             updateStatus(true);
             logConsole("Connecte: " + espIp + " | RSSI:" + d.rssi + "dBm", "success");
-            if (d.sd_available) logConsole("SD Card detectee", "success");
-            else logConsole("SD Card non detectee", "err");
-            if (d.camera_enabled) {
-                window.cameraState = true;
-                logConsole("Caméra déjà active", "success");
-            } else {
-                window.cameraState = false;
-                logConsole("Caméra en veille (mode éco)", "sys");
-            }
+            logConsole("Caméra: " + (d.camera_enabled ? "ON" : "OFF") + " | Temp: " + d.temp + "°C", d.camera_enabled ? "success" : "sys");
+            if (d.sd_available) logConsole("SD OK", "success");
+            window.cameraState = d.camera_enabled;
             updateCameraUI();
         })
         .catch(function(e) {
             updateStatus(false);
-            logConsole("Connexion API: " + e.message, "err");
+            logConsole("Connexion: " + e.message, "err");
         });
 
     fetch("http://" + espIp + "/camera", {mode: "cors", cache: "no-cache"})
@@ -444,7 +421,7 @@ function updateStatus(ok) {
 }
 
 // =============================================================================
-// CAMERA TOGGLE & POWER
+// CAMERA TOGGLE
 // =============================================================================
 function toggleCamera() {
     if (!espIp) { logConsole("IP non definie", "err"); return; }
@@ -461,31 +438,74 @@ function toggleCamera() {
         updateCameraUI();
         logConsole("Caméra " + cmd + " | " + t, newState ? "success" : "sys");
         if (newState) {
+            // Start stream after camera is ON
+            setTimeout(function(){
+                var img = document.getElementById("video-stream");
+                var placeholder = document.getElementById("stream-placeholder");
+                img.src = "http://" + espIp + "/stream?t=" + Date.now();
+                img.style.display = "block";
+                placeholder.style.display = "none";
+                img.onerror = function() {
+                    logConsole("Stream erreur", "err");
+                };
+                img.onload = function() {
+                    logConsole("Stream actif", "success");
+                };
+            }, 800);
+        } else {
             var img = document.getElementById("video-stream");
-            img.src = "http://" + espIp + "/stream?t=" + Date.now();
+            var placeholder = document.getElementById("stream-placeholder");
+            img.src = "";
+            img.style.display = "none";
+            placeholder.style.display = "flex";
         }
     })
     .catch(function(e){ logConsole("Erreur caméra: " + e.message, "err"); });
 }
 
+function forceCameraOff() {
+    if (!espIp) return;
+    fetch("http://" + espIp + "/camera", {
+        method: "POST", mode: "cors",
+        headers: {"Content-Type": "text/plain"},
+        body: "OFF", cache: "no-cache"
+    })
+    .then(function(r){ return r.text(); })
+    .then(function(t){
+        window.cameraState = false;
+        updateCameraUI();
+        var img = document.getElementById("video-stream");
+        var placeholder = document.getElementById("stream-placeholder");
+        img.src = ""; img.style.display = "none"; placeholder.style.display = "flex";
+        logConsole("Caméra éteinte (refroidissement)", "success");
+    })
+    .catch(function(e){ logConsole("Erreur: " + e.message, "err"); });
+}
+
 function updateCameraUI() {
     var btn = document.getElementById("cam-toggle");
-    if (btn) {
-        btn.textContent = window.cameraState ? "Caméra ON" : "Caméra OFF";
-        btn.className = window.cameraState ? "pro-btn btn-primary" : "pro-btn";
-    }
     var badge = document.getElementById("cam-badge");
+    var placeholder = document.getElementById("stream-placeholder");
+    if (btn) {
+        if (window.cameraState) {
+            btn.innerHTML = "&#9679; Eteindre Caméra";
+            btn.className = "pro-btn btn-primary";
+        } else {
+            btn.innerHTML = "&#9679; Allumer Caméra";
+            btn.className = "pro-btn btn-danger";
+        }
+    }
     if (badge) {
-        badge.innerHTML = window.cameraState ? "&#9679; ACTIVE" : "&#9679; VEILLE";
-        badge.className = window.cameraState ? "status-badge secure" : "status-badge";
-        if (!window.cameraState) {
+        if (window.cameraState) {
+            badge.innerHTML = "&#9679; CAMERA ON";
+            badge.style.background = "rgba(16,185,129,0.1)";
+            badge.style.color = "#10b981";
+            badge.style.border = "1px solid rgba(16,185,129,0.2)";
+        } else {
+            badge.innerHTML = "&#9679; CAMERA OFF";
             badge.style.background = "rgba(239,68,68,0.1)";
             badge.style.color = "#ef4444";
             badge.style.border = "1px solid rgba(239,68,68,0.2)";
-        } else {
-            badge.style.background = "";
-            badge.style.color = "";
-            badge.style.border = "";
         }
     }
 }
@@ -503,7 +523,7 @@ function fetchTemp() {
             el.style.color = color;
             el.style.border = "1px solid " + color;
         }
-        if (d.thermal_throttled) logConsole("ALERTE THERMIQUE: CPU throttled!", "err");
+        if (d.thermal_throttled) logConsole("ALERTE THERMIQUE!", "err");
     })
     .catch(function(){});
 }
@@ -518,22 +538,6 @@ function setWiFiPower(val) {
     .then(function(r){ return r.text(); })
     .then(function(t){ logConsole("WiFi TX: " + val + "dBm", "success"); })
     .catch(function(e){ logConsole("Erreur WiFi power: " + e.message, "err"); });
-}
-
-function forceEcoMode() {
-    if (!espIp) return;
-    fetch("http://" + espIp + "/camera", {
-        method: "POST", mode: "cors",
-        headers: {"Content-Type": "text/plain"},
-        body: "OFF", cache: "no-cache"
-    })
-    .then(function(r){ return r.text(); })
-    .then(function(t){
-        window.cameraState = false;
-        updateCameraUI();
-        logConsole("Mode ÉCO forcé (caméra OFF, CPU 160MHz)", "success");
-    })
-    .catch(function(e){ logConsole("Erreur mode éco: " + e.message, "err"); });
 }
 
 // =============================================================================
@@ -561,17 +565,12 @@ function ptzRelease() {
 function sendCmd(cmd) {
     if (!espIp) return;
     fetch("http://" + espIp + "/cmd", {
-        method: "POST",
-        mode: "cors",
+        method: "POST", mode: "cors",
         headers: {"Content-Type": "text/plain"},
-        body: cmd,
-        cache: "no-cache"
+        body: cmd, cache: "no-cache"
     })
     .then(function(r) { if (!r.ok) throw new Error("HTTP " + r.status); logConsole("> " + cmd, "cmd"); })
-    .catch(function(e) {
-        logConsole("Erreur cmd: " + e.message, "err");
-        isConnected = false; updateStatus(false);
-    });
+    .catch(function(e) { logConsole("Erreur cmd: " + e.message, "err"); isConnected = false; updateStatus(false); });
 }
 
 // =============================================================================
@@ -580,7 +579,7 @@ function sendCmd(cmd) {
 function setResolution(res) {
     if (!espIp) { logConsole("IP non definie", "err"); return; }
     localStorage.setItem("ptz_resolution", res);
-    logConsole("Changement resolution: " + res + "...", "sys");
+    logConsole("Resolution: " + res + "...", "sys");
     fetch("http://" + espIp + "/setres", {
         method: "POST", mode: "cors",
         headers: {"Content-Type": "text/plain"},
@@ -591,10 +590,10 @@ function setResolution(res) {
         logConsole("Resolution: " + res + " | " + t, "success");
         setTimeout(function() {
             var img = document.getElementById("video-stream");
-            img.src = "http://" + espIp + "/stream?t=" + Date.now();
+            if (img.style.display !== "none") img.src = "http://" + espIp + "/stream?t=" + Date.now();
         }, 1000);
     })
-    .catch(function(e) { logConsole("Erreur resolution: " + e.message, "err"); });
+    .catch(function(e) { logConsole("Erreur: " + e.message, "err"); });
 }
 
 // =============================================================================
@@ -614,13 +613,13 @@ function setQuality(val) {
     })
     .then(function(r) { return r.text(); })
     .then(function(t) {
-        logConsole("Qualite JPEG: " + val, "success");
+        logConsole("Qualite: " + val, "success");
         setTimeout(function() {
             var img = document.getElementById("video-stream");
-            img.src = "http://" + espIp + "/stream?t=" + Date.now();
+            if (img.style.display !== "none") img.src = "http://" + espIp + "/stream?t=" + Date.now();
         }, 1000);
     })
-    .catch(function(e) { logConsole("Erreur qualite: " + e.message, "err"); });
+    .catch(function(e) { logConsole("Erreur: " + e.message, "err"); });
 }
 
 // =============================================================================
@@ -633,7 +632,7 @@ function applyCameraParams() {
     var s = document.getElementById("cam-saturation").value;
     var sh = document.getElementById("cam-sharpness").value;
     var params = "brightness:" + b + "|contrast:" + c + "|saturation:" + s + "|sharpness:" + sh;
-    logConsole("Application parametres capteur...", "sys");
+    logConsole("Application parametres...", "sys");
     fetch("http://" + espIp + "/setparams", {
         method: "POST", mode: "cors",
         headers: {"Content-Type": "text/plain"},
@@ -642,16 +641,12 @@ function applyCameraParams() {
     .then(function(r) { return r.text(); })
     .then(function(t) {
         logConsole("Parametres appliques: " + t, "success");
-        setTimeout(function() {
-            var img = document.getElementById("video-stream");
-            img.src = "http://" + espIp + "/stream?t=" + Date.now();
-        }, 1500);
     })
-    .catch(function(e) { logConsole("Erreur parametres: " + e.message, "err"); });
+    .catch(function(e) { logConsole("Erreur: " + e.message, "err"); });
 }
 
 // =============================================================================
-// APPLY FILTERS TO IMAGE VIA CANVAS
+// FILTERS
 // =============================================================================
 function applyFiltersToImage(srcImg, callback) {
     var canvas = document.createElement("canvas");
@@ -659,12 +654,8 @@ function applyFiltersToImage(srcImg, callback) {
     var w = srcImg.naturalWidth || srcImg.width || 640;
     var h = srcImg.naturalHeight || srcImg.height || 480;
     if (filterState.rotation === 90 || filterState.rotation === 270) {
-        canvas.width = h;
-        canvas.height = w;
-    } else {
-        canvas.width = w;
-        canvas.height = h;
-    }
+        canvas.width = h; canvas.height = w;
+    } else { canvas.width = w; canvas.height = h; }
     var b = 100 + (filterState.brightness * 10);
     var s = 100 + (filterState.saturation * 10);
     var c = 100 + (filterState.contrast * 10);
@@ -676,62 +667,44 @@ function applyFiltersToImage(srcImg, callback) {
     if (filterState.mirrorV) ctx.scale(1, -1);
     ctx.drawImage(srcImg, -w / 2, -h / 2);
     ctx.restore();
-    canvas.toBlob(function(blob) {
-        callback(blob);
-    }, "image/jpeg", 0.92);
+    canvas.toBlob(function(blob) { callback(blob); }, "image/jpeg", 0.92);
 }
 
-// =============================================================================
-// CAPTURE PHOTO
-// =============================================================================
 function capturePhoto() {
     if (!espIp) { logConsole("IP non definie", "err"); return; }
     var img = document.getElementById("video-stream");
     if (!img || img.style.display === "none" || !img.complete) {
-        logConsole("Flux non actif, impossible de capturer", "err");
-        return;
+        logConsole("Flux non actif", "err"); return;
     }
-    logConsole("Capture photo avec filtres...", "sys");
+    logConsole("Capture photo...", "sys");
     applyFiltersToImage(img, function(blob) {
         var url = URL.createObjectURL(blob);
         var a = document.createElement("a");
-        a.href = url;
-        a.download = "S3PTZ_" + Date.now() + ".jpg";
-        a.click();
+        a.href = url; a.download = "S3PTZ_" + Date.now() + ".jpg"; a.click();
         URL.revokeObjectURL(url);
-        logConsole("Photo sauvegardee avec filtres!", "success");
+        logConsole("Photo sauvegardee!", "success");
     });
 }
 
-// =============================================================================
-// CAPTURE HD
-// =============================================================================
 function captureHD() {
     if (!espIp) { logConsole("IP non definie", "err"); return; }
-    logConsole("Capture HD native + filtres...", "sys");
-    fetch("http://" + espIp + "/capturehd", {
-        method: "GET", mode: "cors", cache: "no-cache"
-    })
-    .then(function(r) {
-        if (!r.ok) throw new Error("HTTP " + r.status);
-        return r.blob();
-    })
+    logConsole("Capture HD...", "sys");
+    fetch("http://" + espIp + "/capturehd", {method: "GET", mode: "cors", cache: "no-cache"})
+    .then(function(r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.blob(); })
     .then(function(blob) {
         var img = new Image();
         img.onload = function() {
             applyFiltersToImage(img, function(processedBlob) {
                 var url = URL.createObjectURL(processedBlob);
                 var a = document.createElement("a");
-                a.href = url;
-                a.download = "S3PTZ_HD_" + Date.now() + ".jpg";
-                a.click();
+                a.href = url; a.download = "S3PTZ_HD_" + Date.now() + ".jpg"; a.click();
                 URL.revokeObjectURL(url);
-                logConsole("Photo HD avec filtres sauvegardee!", "success");
+                logConsole("Photo HD sauvegardee!", "success");
             });
         };
         img.src = URL.createObjectURL(blob);
     })
-    .catch(function(e) { logConsole("Erreur capture HD: " + e.message, "err"); });
+    .catch(function(e) { logConsole("Erreur HD: " + e.message, "err"); });
 }
 
 // =============================================================================
@@ -747,8 +720,7 @@ function startRecording() {
     var img = document.getElementById("video-stream");
     if (!img.src || img.style.display === "none") { logConsole("Flux non actif", "err"); return; }
     recordCanvas = document.createElement("canvas");
-    recordCanvas.width = 640;
-    recordCanvas.height = 480;
+    recordCanvas.width = 640; recordCanvas.height = 480;
     recordCtx = recordCanvas.getContext("2d");
     var stream = recordCanvas.captureStream(15);
     mediaRecorder = new MediaRecorder(stream, { mimeType: "video/webm;codecs=vp9" });
@@ -758,13 +730,12 @@ function startRecording() {
         var blob = new Blob(chunks, { type: "video/webm" });
         var a = document.createElement("a");
         a.href = URL.createObjectURL(blob);
-        a.download = "S3PTZ_RECORD_" + Date.now() + ".webm";
-        a.click();
+        a.download = "S3PTZ_RECORD_" + Date.now() + ".webm"; a.click();
         logConsole("Video sauvegardee", "success");
     };
     mediaRecorder.start(200);
     isRecording = true;
-    logConsole("Enregistrement demarre (15 FPS)", "sys");
+    logConsole("Enregistrement demarre", "sys");
     recordInterval = setInterval(function() {
         if (!recordCtx || !img.complete) return;
         recordCtx.filter = img.style.filter || "none";
@@ -781,10 +752,7 @@ function startRecording() {
 function stopRecording() {
     if (mediaRecorder && mediaRecorder.state !== "inactive") mediaRecorder.stop();
     if (recordInterval) clearInterval(recordInterval);
-    isRecording = false;
-    recordCanvas = null;
-    recordCtx = null;
-    recordInterval = null;
+    isRecording = false; recordCanvas = null; recordCtx = null; recordInterval = null;
     logConsole("Enregistrement arrete", "sys");
 }
 
@@ -794,8 +762,7 @@ function stopRecording() {
 function toggleMirror(axis, checked) {
     if (axis === "h") filterState.mirrorH = checked;
     else filterState.mirrorV = checked;
-    saveToStorage();
-    applyTransform();
+    saveToStorage(); applyTransform();
 }
 
 function applyTransform() {
@@ -810,8 +777,7 @@ function applyTransform() {
 function updateFilter(type, value) {
     filterState[type] = parseFloat(value);
     document.getElementById("val-" + type).textContent = value;
-    saveToStorage();
-    applyFilters();
+    saveToStorage(); applyFilters();
 }
 
 function applyFilters() {
@@ -825,8 +791,7 @@ function applyFilters() {
 
 function rotateStream() {
     filterState.rotation = (filterState.rotation + 90) % 360;
-    saveToStorage();
-    applyTransform();
+    saveToStorage(); applyTransform();
 }
 
 // =============================================================================
@@ -838,35 +803,21 @@ function loadGallery() {
     if (!grid) return;
     grid.innerHTML = "<p style='color:var(--text-muted);font-size:14px;'>Chargement...</p>";
     fetch("http://" + espIp + "/gallery", { mode: "cors", cache: "no-cache" })
-        .then(function(r) {
-            if (!r.ok) throw new Error("HTTP " + r.status);
-            return r.json();
-        })
+        .then(function(r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
         .then(function(files) {
-            if (!Array.isArray(files)) {
-                grid.innerHTML = "<p style='color:var(--text-muted);font-size:14px;'>Reponse invalide du serveur.</p>";
-                return;
-            }
-            if (files.length === 0) {
-                grid.innerHTML = "<p style='color:var(--text-muted);font-size:14px;'>Aucune photo sur la carte SD.</p>";
-                return;
-            }
+            if (!Array.isArray(files)) { grid.innerHTML = "<p style='color:var(--text-muted);font-size:14px;'>Reponse invalide.</p>"; return; }
+            if (files.length === 0) { grid.innerHTML = "<p style='color:var(--text-muted);font-size:14px;'>Aucune photo.</p>"; return; }
             var html = "";
             for (var i = 0; i < files.length; i++) {
                 var f = files[i];
                 var url = "http://" + espIp + "/photo?file=" + encodeURIComponent(f.name);
-                html += '<div class="gallery-item">';
-                html += '<a href="' + url + '" download="' + f.name + '">';
+                html += '<div class="gallery-item"><a href="' + url + '" download="' + f.name + '">';
                 html += '<img src="' + url + '" alt="' + f.name + '" loading="lazy">';
-                html += '<div class="gallery-caption">' + f.name + "<br><small>" + formatBytes(f.size) + "</small></div>";
-                html += '</a></div>';
+                html += '<div class="gallery-caption">' + f.name + "<br><small>" + formatBytes(f.size) + "</small></div></a></div>";
             }
             grid.innerHTML = html;
         })
-        .catch(function(e) {
-            grid.innerHTML = "<p style='color:var(--text-muted);font-size:14px;'>Erreur: " + e.message + "</p>";
-            logConsole("Erreur galerie: " + e.message, "err");
-        });
+        .catch(function(e) { grid.innerHTML = "<p style='color:var(--text-muted);font-size:14px;'>Erreur: " + e.message + "</p>"; logConsole("Erreur galerie: " + e.message, "err"); });
 }
 
 function formatBytes(bytes) {
@@ -910,17 +861,17 @@ function executeCommand(val) {
     switch(cmd) {
         case "clear": clearLogs(); return;
         case "home": sendCmd("HOME"); logConsole("HOME envoye", "cmd"); return;
-        case "center": sendCmd("CENTER"); logConsole("CENTER envoye (position 1/4)", "cmd"); return;
-        case "left": sendCmd("H:64"); logConsole("Pan gauche rapide", "cmd"); return;
-        case "right": sendCmd("H:-64"); logConsole("Pan droite rapide", "cmd"); return;
-        case "up": sendCmd("V:64"); logConsole("Tilt haut rapide", "cmd"); return;
-        case "down": sendCmd("V:-64"); logConsole("Tilt bas rapide", "cmd"); return;
-        case "camon": toggleCamera(true); return;
-        case "camoff": toggleCamera(false); return;
+        case "center": sendCmd("CENTER"); logConsole("CENTER envoye", "cmd"); return;
+        case "left": sendCmd("H:64"); logConsole("Pan gauche", "cmd"); return;
+        case "right": sendCmd("H:-64"); logConsole("Pan droite", "cmd"); return;
+        case "up": sendCmd("V:64"); logConsole("Tilt haut", "cmd"); return;
+        case "down": sendCmd("V:-64"); logConsole("Tilt bas", "cmd"); return;
+        case "camon": toggleCamera(); return;
+        case "camoff": forceCameraOff(); return;
         case "status":
             fetch("http://" + espIp + "/status", {mode: "cors"}).then(function(r) { return r.json(); }).then(function(d) {
-                logConsole("IP:" + d.ip + " RSSI:" + d.rssi + "dBm Uptime:" + d.uptime + "s Stream:" + (d.stream_active ? "ON" : "OFF") + " SD:" + (d.sd_available ? "OK" : "N/A") + " Cam:" + (d.camera_enabled ? "ON" : "OFF") + " Temp:" + d.temp + "C", "sys");
-            }).catch(function(e) { logConsole("Erreur status: " + e.message, "err"); });
+                logConsole("IP:" + d.ip + " RSSI:" + d.rssi + "dBm Uptime:" + d.uptime + "s Cam:" + (d.camera_enabled ? "ON" : "OFF") + " Temp:" + d.temp + "C", "sys");
+            }).catch(function(e) { logConsole("Erreur: " + e.message, "err"); });
             return;
         default: logConsole("Inconnu: " + cmd, "err");
     }
