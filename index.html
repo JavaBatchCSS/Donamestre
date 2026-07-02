@@ -1,124 +1,358 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Donamestre Executive Control</title>
-    <link rel="stylesheet" href="style.css">
-    <script defer src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RF Gateway</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div class="app-container">
-        <header class="pro-header">
-            <div class="brand-zone">
-                <h1 class="pro-logo">D<span class="power-glyph" id="power-main" onclick="toggleSystem()">⏻</span>NAMESTRE</h1>
-                <div class="sub-brand">AXIS-H MONITORING INTERFACE</div>
-            </div>
-            <div class="connection-zone">
-                <input type="text" id="esp-ip" class="pro-input" placeholder="Adresse IP (ex: 192.168.1.20)">
-                <button onclick="connectSystem()" class="pro-btn btn-primary">Lier l'appareil</button>
-            </div>
-        </header>
+  <div id="app">
+    <header id="topbar">
+      <div id="brand">
+        <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+          <circle cx="14" cy="14" r="3" fill="var(--accent)"/>
+          <path d="M14 14 Q8 6 4 4" stroke="var(--accent)" stroke-width="1.2" fill="none" opacity="0.6"/>
+          <path d="M14 14 Q20 6 24 4" stroke="var(--accent)" stroke-width="1.2" fill="none" opacity="0.6"/>
+          <path d="M14 14 Q6 14 2 11" stroke="var(--accent)" stroke-width="1" fill="none" opacity="0.35"/>
+          <path d="M14 14 Q22 14 26 11" stroke="var(--accent)" stroke-width="1" fill="none" opacity="0.35"/>
+          <circle cx="14" cy="14" r="6" stroke="var(--accent)" stroke-width="0.7" fill="none" opacity="0.25"/>
+          <circle cx="14" cy="14" r="11" stroke="var(--accent)" stroke-width="0.5" fill="none" opacity="0.12"/>
+        </svg>
+        <span class="brand-name">RF GATEWAY</span>
+        <span class="brand-sub">ESP32-S3</span>
+      </div>
+      <nav id="tabs">
+        <button class="tab active" data-tab="radio">&#9113; RADIO</button>
+        <button class="tab" data-tab="domotique">&#9783; DOMOTIQUE</button>
+        <button class="tab" data-tab="remotes">&#9881; TÉLÉCOMMANDES</button>
+        <button class="tab" data-tab="debug">&#9654; CONSOLE</button>
+        <button class="tab" data-tab="settings">&#9881; RÉGLAGES</button>
+      </nav>
+      <div id="status-bar">
+        <span id="ws-indicator" class="dot disconnected" title="WebSocket"></span>
+        <span id="rssi-display">—</span>
+        <span id="proto-badge">—</span>
+        <span id="relay-led" class="dot off" title="Relais"></span>
+      </div>
+    </header>
 
-        <div class="tabs-nav">
-            <button class="tab-btn active" onclick="switchTab('studio')">🎬 Studio Live</button>
-            <button class="tab-btn" onclick="switchTab('terminal')">📟 Console & Commandes <span id="log-count" class="badge">0</span></button>
+    <main id="content">
+      <!-- Tab: RADIO -->
+      <section id="tab-radio" class="tab-panel active">
+        <div class="panel-grid">
+          <div class="card card-receiver">
+            <div class="card-title">RÉCEPTEUR RF</div>
+            <div id="receiver-display">
+              <div id="vintage-tuner">
+                <div id="tuner-scale-wrap">
+                  <canvas id="tuner-canvas" width="700" height="110"></canvas>
+                  <div id="tuner-needle-wrap">
+                    <div id="tuner-needle"></div>
+                  </div>
+                </div>
+                <div id="freq-readout">
+                  <span id="freq-mhz">433.42</span>
+                  <span class="freq-unit">MHz</span>
+                </div>
+              </div>
+              <div id="protocol-presets">
+                <button class="preset-btn active" data-proto="0">SOMFY RTS<span>433.42 MHz</span></button>
+                <button class="preset-btn" data-proto="1">MOOVO<span>433.92 MHz</span></button>
+                <button class="preset-btn" data-proto="2">NICE Flor-S<span>433.92 MHz</span></button>
+                <button class="preset-btn" data-proto="3">CUSTOM<span>manuel</span></button>
+              </div>
+            </div>
+          </div>
+
+          <div class="card card-params">
+            <div class="card-title">PARAMÈTRES RADIO</div>
+            <div class="params-grid">
+              <label>Fréquence (MHz)
+                <input type="number" id="p-freq" min="300" max="928" step="0.01" value="433.42">
+              </label>
+              <label>Largeur de bande (kHz)
+                <div class="slider-row">
+                  <input type="range" id="p-bw-range" min="58" max="812" step="1" value="100">
+                  <input type="number" id="p-bw" min="58" max="812" step="1" value="100">
+                </div>
+              </label>
+              <label>Déviation FSK (kHz)
+                <div class="slider-row">
+                  <input type="range" id="p-dev-range" min="1" max="380" step="0.1" value="47.6">
+                  <input type="number" id="p-dev" min="1" max="380" step="0.1" value="47.6">
+                </div>
+              </label>
+              <label>Modulation
+                <select id="p-mod">
+                  <option value="1">GFSK (Somfy)</option>
+                  <option value="2">OOK / ASK (Moovo, Nice)</option>
+                  <option value="0">2-FSK</option>
+                  <option value="3">4-FSK</option>
+                </select>
+              </label>
+              <label>Puissance TX (dBm)
+                <div class="slider-row">
+                  <input type="range" id="p-tx-range" min="-30" max="12" step="1" value="10">
+                  <input type="number" id="p-tx" min="-30" max="12" step="1" value="10">
+                </div>
+              </label>
+            </div>
+            <div class="card-actions">
+              <button id="btn-apply-custom" class="btn-primary">APPLIQUER</button>
+              <button id="btn-reset-proto" class="btn-secondary">RÉINITIALISER</button>
+            </div>
+          </div>
+
+          <div class="card card-rssi">
+            <div class="card-title">NIVEAU DU SIGNAL — RSSI</div>
+            <div id="rssi-meter-wrap">
+              <canvas id="rssi-canvas" width="420" height="90"></canvas>
+              <div id="rssi-value-display">
+                <span id="rssi-num">—</span>
+                <span class="rssi-unit">dBm</span>
+              </div>
+            </div>
+            <div id="rssi-history-bar"></div>
+          </div>
+
+          <div class="card card-frames">
+            <div class="card-title">TRAMES REÇUES — TEMPS RÉEL</div>
+            <div id="frame-list"></div>
+            <div class="card-actions">
+              <button id="btn-clear-frames" class="btn-secondary">EFFACER</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Tab: DOMOTIQUE -->
+      <section id="tab-domotique" class="tab-panel">
+        <div class="domo-header">
+          <div class="domo-title-area">
+            <h2>Contrôle domotique</h2>
+            <p class="domo-subtitle">Volets, portails, groupes — commande directe</p>
+          </div>
+          <div class="domo-global-actions">
+            <button id="btn-all-up" class="btn-large btn-up">▲ TOUT MONTER</button>
+            <button id="btn-all-my" class="btn-large btn-my">● MY GLOBAL</button>
+            <button id="btn-all-down" class="btn-large btn-down">▼ TOUT DESCENDRE</button>
+          </div>
         </div>
 
-        <main class="main-content">
-            <div id="tab-studio" class="tab-content active">
-                <div class="studio-grid">
-                    <div class="pro-card video-card">
-                        <div class="video-viewport">
-                            <div class="status-badge secure">Réseau Local Sécurisé</div>
-                            <div id="ai-status" class="status-badge ai-inactive">IA Inactive</div>
-                            <div class="canvas-container" id="canvas-wrapper">
-                                <img id="video-stream" src="" alt="Aucun flux vidéo actif. Connectez l'ESP32.">
-                            </div>
-                        </div>
-                        <div class="action-bar">
-                            <button class="pro-btn" onclick="rotateVideo()">🔄 Rotation 90°</button>
-                            <button class="pro-btn btn-secondary" onclick="takeSnapshot()">📸 Capture HD</button>
-                            <button class="pro-btn btn-danger" id="rec-btn" onclick="toggleRecording()">🔴 Enregistrer</button>
-                        </div>
-                    </div>
-
-                    <div class="pro-card settings-card">
-                        <div class="section-title">Traitement d'image (Local)</div>
-                        
-                        <div class="toggle-row">
-                            <span class="label-text">Détection faciale active</span>
-                            <label class="pro-switch">
-                                <input type="checkbox" id="toggle-face" onchange="toggleFaceDetection()">
-                                <span class="switch-slider"></span>
-                            </label>
-                        </div>
-
-                        <div class="range-group">
-                            <div class="range-labels"><span>Luminosité</span><span id="val-bright" class="value-display">100%</span></div>
-                            <input type="range" min="30" max="250" value="100" class="pro-slider" id="slider-bright" oninput="applyFilters()">
-                        </div>
-                        
-                        <div class="range-group">
-                            <div class="range-labels"><span>Saturation</span><span id="val-saturate" class="value-display">100%</span></div>
-                            <input type="range" min="0" max="250" value="100" class="pro-slider" id="slider-saturate" oninput="applyFilters()">
-                        </div>
-
-                        <div class="range-group">
-                            <div class="range-labels"><span>Contraste</span><span id="val-contrast" class="value-display">100%</span></div>
-                            <input type="range" min="50" max="200" value="100" class="pro-slider" id="slider-contrast" oninput="applyFilters()">
-                        </div>
-
-                        <div class="preset-grid">
-                            <button class="pro-btn btn-small" onclick="setPreset('normal')">Normal</button>
-                            <button class="pro-btn btn-small" onclick="setPreset('vision-noire')">Vision Nuit</button>
-                            <button class="pro-btn btn-small" onclick="setPreset('retro')">Contraste YUV</button>
-                            <button class="pro-btn btn-small" onclick="setPreset('high-contrast')">Surveillance</button>
-                        </div>
-
-                        <div class="ptz-section">
-                            <div class="section-title">Contrôle de l'axe</div>
-                            <div class="ptz-row">
-                                <button class="pro-btn" onclick="moveH('left')">◀ Gauche</button>
-                                <button class="pro-btn btn-center" onclick="moveH('home')">⌂ Homing</button>
-                                <button class="pro-btn" onclick="moveH('right')">Droite ▶</button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+        <div id="domo-sections">
+          <div class="domo-section" id="section-volets">
+            <div class="section-label">
+              <span class="section-icon">▬</span> VOLETS
             </div>
-
-            <div id="tab-terminal" class="tab-content">
-                <div class="terminal-layout">
-                    <div class="pro-card console-main">
-                        <div class="panel-header">
-                            <span class="panel-title">Stdout System Log</span>
-                            <div class="header-actions">
-                                <button onclick="copyLogs()" class="pro-btn btn-small">📋 Copier les logs</button>
-                                <button onclick="clearConsole()" class="pro-btn btn-small">Effacer</button>
-                            </div>
-                        </div>
-                        <div class="terminal-box" id="console-output">
-                            <div class="log-row sys">[SYS] Initialisation de la console de contrôle.</div>
-                        </div>
-                        <div class="terminal-input-bar">
-                            <span class="prompt">></span>
-                            <input type="text" id="cmd-field" placeholder="Entrer une commande (ex: home, left, normal)..." onkeydown="handleConsoleInput(event)">
-                        </div>
-                    </div>
-
-                    <div class="pro-card console-sidebar">
-                        <div class="sidebar-header">
-                            <div class="section-title" style="margin-bottom: 10px;">Dictionnaire de commandes</div>
-                            <input type="text" id="sidebar-search" class="pro-input search-input" placeholder="🔍 Rechercher une commande..." oninput="filterCommands()">
-                        </div>
-                        <div class="command-list" id="commands-container">
-                            </div>
-                    </div>
-                </div>
+            <div class="remote-cards" id="cards-volets"></div>
+          </div>
+          <div class="domo-section" id="section-groupes">
+            <div class="section-label">
+              <span class="section-icon">▤</span> GROUPES
             </div>
-        </main>
-    </div>
-    <script src="app.js"></script>
+            <div class="remote-cards" id="cards-groupes"></div>
+          </div>
+          <div class="domo-section" id="section-portails">
+            <div class="section-label">
+              <span class="section-icon">⊡</span> PORTAILS
+            </div>
+            <div class="remote-cards" id="cards-portails"></div>
+          </div>
+        </div>
+
+        <div class="card relay-card">
+          <div class="card-title">RELAIS DIRECT</div>
+          <div class="relay-controls">
+            <button id="btn-relay-on" class="btn-relay-on">ON</button>
+            <div id="relay-status-text">OUVERT</div>
+            <button id="btn-relay-off" class="btn-relay-off">OFF</button>
+            <label class="relay-pulse-label">Impulsion
+              <input type="number" id="relay-pulse-ms" value="500" min="50" max="5000" step="50"> ms
+              <button id="btn-relay-pulse" class="btn-primary">PULSE</button>
+            </label>
+          </div>
+        </div>
+      </section>
+
+      <!-- Tab: TÉLÉCOMMANDES -->
+      <section id="tab-remotes" class="tab-panel">
+        <div class="remotes-toolbar">
+          <h2>Gestion des télécommandes</h2>
+          <button id="btn-new-remote" class="btn-primary">+ NOUVELLE</button>
+          <button id="btn-learn-somfy" class="btn-learn btn-learn-s" data-proto="0">APPAIRER SOMFY</button>
+          <button id="btn-learn-moovo" class="btn-learn btn-learn-m" data-proto="1">APPAIRER MOOVO</button>
+          <button id="btn-learn-nice" class="btn-learn btn-learn-n" data-proto="2">APPAIRER NICE</button>
+          <div id="learn-progress" class="learn-progress hidden">
+            <div class="learn-pulse-ring"></div>
+            <span id="learn-status-text">En attente…</span>
+            <span id="learn-countdown">20</span>s
+            <button id="btn-learn-cancel" class="btn-secondary">Annuler</button>
+          </div>
+        </div>
+
+        <div id="remotes-list" class="remotes-table">
+          <div class="remotes-table-head">
+            <span>Nom</span><span>Adresse</span><span>Protocole</span>
+            <span>Code roulant</span><span>Actif</span><span>Actions</span>
+          </div>
+          <div id="remotes-body"></div>
+        </div>
+
+        <!-- Modal: nouvelle télécommande -->
+        <div id="modal-new-remote" class="modal hidden">
+          <div class="modal-box">
+            <div class="modal-title">Nouvelle télécommande virtuelle</div>
+            <label>Nom<input type="text" id="nr-label" placeholder="Volet salon"></label>
+            <label>Protocole
+              <select id="nr-proto">
+                <option value="0">Somfy RTS</option>
+                <option value="1">Moovo</option>
+                <option value="2">Nice Flor-S</option>
+              </select>
+            </label>
+            <label class="inline-check">
+              <input type="checkbox" id="nr-group"> Groupe (multi-récepteurs)
+            </label>
+            <label>Adresse (hex, vide = aléatoire)
+              <input type="text" id="nr-addr" placeholder="0xA1B2C3" maxlength="10">
+            </label>
+            <label>Code roulant initial
+              <input type="number" id="nr-startcode" value="1" min="1" max="65535">
+            </label>
+            <div class="modal-actions">
+              <button id="btn-nr-confirm" class="btn-primary">CRÉER</button>
+              <button id="btn-nr-cancel" class="btn-secondary">Annuler</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Modal: guide appairage groupe -->
+        <div id="modal-group-pair" class="modal hidden">
+          <div class="modal-box modal-wide">
+            <div class="modal-title">Appairage d'un groupe Somfy</div>
+            <div class="pairing-guide">
+              <p>Un groupe Somfy est une télécommande virtuelle avec une <strong>adresse unique</strong>, appairée sur plusieurs récepteurs. Chaque récepteur mémorise cette adresse en mode PROG.</p>
+              <ol>
+                <li>Créez d'abord la télécommande groupe ci-dessous (ou sélectionnez-en une existante).</li>
+                <li>Montez physiquement sur chaque volet concerné pour accéder au bouton PROG moteur.</li>
+                <li>Appuyez sur PROG moteur (LED clignote). Revenez ici et cliquez <strong>ENVOYER PROG</strong>.</li>
+                <li>La LED du moteur clignote 2× = appairage réussi. Répétez pour chaque moteur.</li>
+              </ol>
+              <div class="pair-select">
+                <label>Groupe à appairer
+                  <select id="pair-group-select"></select>
+                </label>
+                <button id="btn-send-prog" class="btn-primary">ENVOYER PROG</button>
+                <span id="pair-result"></span>
+              </div>
+            </div>
+            <div class="modal-actions">
+              <button id="btn-modal-group-close" class="btn-secondary">Fermer</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Tab: CONSOLE DEBUG -->
+      <section id="tab-debug" class="tab-panel">
+        <div class="debug-toolbar">
+          <h2>Console de débogage</h2>
+          <div class="debug-filters">
+            <label><input type="checkbox" id="flt-log" checked> LOG</label>
+            <label><input type="checkbox" id="flt-event" checked> EVENT</label>
+            <label><input type="checkbox" id="flt-status" checked> STATUS</label>
+            <label><input type="checkbox" id="flt-tx" checked> TX</label>
+            <label><input type="checkbox" id="flt-rx" checked> RX</label>
+          </div>
+          <div class="debug-actions">
+            <button id="btn-clear-console" class="btn-secondary">EFFACER</button>
+            <button id="btn-export-log" class="btn-secondary">EXPORTER</button>
+            <label class="inline-check">
+              <input type="checkbox" id="dbg-autoscroll" checked> Auto-scroll
+            </label>
+          </div>
+        </div>
+        <div id="console-output"></div>
+        <div class="debug-input-row">
+          <span class="prompt">&gt;</span>
+          <input type="text" id="debug-cmd" placeholder="Commande (ex: status, scan, reboot)">
+          <button id="btn-debug-send" class="btn-primary">ENVOYER</button>
+        </div>
+      </section>
+
+      <!-- Tab: RÉGLAGES -->
+      <section id="tab-settings" class="tab-panel">
+        <div class="settings-grid">
+          <div class="card">
+            <div class="card-title">CONNEXION</div>
+            <label>IP de la carte ESP32
+              <input type="text" id="s-ip" value="192.168.1.20" placeholder="192.168.1.20">
+            </label>
+            <label>Port
+              <input type="number" id="s-port" value="80" min="1" max="65535">
+            </label>
+            <label>Token d'accès (optionnel)
+              <input type="text" id="s-token" placeholder="Laisser vide si désactivé">
+            </label>
+            <div class="card-actions">
+              <button id="btn-save-connection" class="btn-primary">APPLIQUER</button>
+              <button id="btn-test-connection" class="btn-secondary">TESTER</button>
+              <span id="conn-test-result"></span>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">SYSTÈME</div>
+            <div class="sys-info" id="sys-info">
+              <div class="sys-row"><span>IP carte</span><span id="si-ip">—</span></div>
+              <div class="sys-row"><span>Hostname</span><span id="si-hostname">—</span></div>
+              <div class="sys-row"><span>Protocole actif</span><span id="si-proto">—</span></div>
+              <div class="sys-row"><span>RSSI WiFi</span><span id="si-rssi">—</span></div>
+              <div class="sys-row"><span>Uptime</span><span id="si-uptime">—</span></div>
+              <div class="sys-row"><span>Heap libre</span><span id="si-heap">—</span></div>
+              <div class="sys-row"><span>Version firmware</span><span id="si-fw">—</span></div>
+              <div class="sys-row"><span>Télécommandes</span><span id="si-remotes">—</span></div>
+            </div>
+            <div class="card-actions">
+              <button id="btn-reboot" class="btn-danger">REDÉMARRER</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">INTERFACE</div>
+            <label>Thème
+              <select id="s-theme">
+                <option value="dark">Sombre (défaut)</option>
+                <option value="darker">Ultra-sombre</option>
+                <option value="amber">Ambre vintage</option>
+              </select>
+            </label>
+            <label><input type="checkbox" id="s-sounds"> Sons de confirmation</label>
+            <label><input type="checkbox" id="s-notif" checked> Notifications navigateur</label>
+            <div class="card-actions">
+              <button id="btn-save-ui" class="btn-primary">SAUVEGARDER</button>
+            </div>
+          </div>
+
+          <div class="card card-about">
+            <div class="card-title">À PROPOS</div>
+            <div class="about-text">
+              <p><strong>RF Gateway</strong> v1.0.0</p>
+              <p>ESP32-S3 N16R8 · CC1101 433 MHz<br>
+                 Somfy RTS · Moovo · Nice Flor-S</p>
+              <p class="about-note">Interface hébergée sur GitHub Pages.<br>
+                 Toute modification UI ne nécessite pas de reflash.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="toast-container"></div>
+  <script src="app.js"></script>
 </body>
 </html>
