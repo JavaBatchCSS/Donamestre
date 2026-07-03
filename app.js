@@ -1,41 +1,38 @@
 /* ============================================================
-   RF GATEWAY — app.js  v1.0.0
+   RF GATEWAY — app.js  v2.1
    100% du comportement UI est ici.
    Pour modifier l'interface : éditer ce fichier sur GitHub,
    jamais besoin de reflasher la carte.
 
-   Architecture :
-     Config      — IP/port/token, persistés en localStorage
-     WS          — WebSocket temps-réel vers ESP32
-     API         — fetch() REST vers ESP32
-     Tuner       — canvas "poste radio vintage"
-     RSSI        — canvas bargraph + historique
-     Frames      — liste trames reçues temps-réel
-     Remotes     — table + domotique cards
-     Console     — log coloré filtrable
-     Settings    — UI + connexion + système
-     Toast       — notifications
+   Architecture v2.1 :
+     WS-only   — Toute la communication passe par WebSocket
+     Config    — IP/port/token, persistés en localStorage
+     Tuner     — canvas "poste radio vintage"
+     RSSI      — canvas bargraph + historique
+     Frames    — liste trames reçues temps-réel
+     Remotes   — table + domotique cards
+     Console   — log coloré filtrable
+     Settings  — UI + connexion + système
+     Toast     — notifications
    ============================================================ */
 
 'use strict';
 
 // ═══════════════════════════════════════════════════════════════
-//  CONFIG — modifie l'IP ici ou depuis l'onglet Réglages
+//  CONFIG
 // ═══════════════════════════════════════════════════════════════
 const DEFAULT_IP    = '192.168.1.20';
 const DEFAULT_PORT  = 80;
 const DEFAULT_TOKEN = '';
 
-// Fréquences limites de la bande radio affichée sur le tuner vintage
 const TUNER_MIN_MHZ = 430.0;
 const TUNER_MAX_MHZ = 436.0;
 
-// Protocoles prédéfinis — modifiable ici sans toucher au firmware
 const PRESETS = {
   0: { name: 'Somfy RTS',   freq: 433.42, bw: 99.97,  dev: 47.60, mod: 1, color: '#3ecfff' },
   1: { name: 'Moovo',       freq: 433.92, bw: 650.0,  dev: 0,     mod: 2, color: '#2de08a' },
   2: { name: 'Nice Flor-S', freq: 433.92, bw: 650.0,  dev: 0,     mod: 2, color: '#f0a830',
-       note: 'Implémentation non validée terrain — tester en RX avant TX' },
+       note: 'Implementation non validee terrain — tester en RX avant TX' },
   3: { name: 'Custom',      freq: 433.92, bw: 270.0,  dev: 47.6,  mod: 2, color: '#9a7aff' },
 };
 
@@ -53,17 +50,18 @@ let cfg = {
 
 let ws           = null;
 let wsReconnTimer= null;
-let remotes      = [];       // tableau RemoteEntry du firmware
-let status       = {};       // dernier objet status reçu
-let rssiHistory  = [];       // 60 dernières valeurs RSSI
-let frames       = [];       // trames reçues pour affichage
-let consoleLogs  = [];       // tous les messages console
+let wsReqId      = 0;
+const wsPending  = new Map();
+let remotes      = [];
+let incomingRemotes = [];
+let status       = {};
+let rssiHistory  = [];
+let frames       = [];
+let consoleLogs  = [];
 let learningActive = false;
 let learnCountdownTimer = null;
 let activeProto  = 0;
-let tunerNeedleX = 0.5;      // position normalisée (0..1) de l'aiguille
-
-// AudioContext pour bips de confirmation (optionnel)
+let tunerNeedleX = 0.5;
 let audioCtx = null;
 
 // ═══════════════════════════════════════════════════════════════
@@ -121,7 +119,7 @@ function beep(freq = 880, dur = 60, vol = 0.08) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  WEBSOCKET
+//  WEBSOCKET API (v2.1 — remplace REST)
 // ═══════════════════════════════════════════════════════════════
 function wsConnect() {
   if (ws && ws.readyState < 2) return;
@@ -131,16 +129,14 @@ function wsConnect() {
 
   ws.onopen = () => {
     updateWsDot('connected');
-    consoleLog('SYS', 'WebSocket connecté');
-    toast('Connecté à la carte', 'ok');
+    consoleLog('SYS', 'WebSocket connecte');
+    toast('Connecte a la carte', 'ok');
     clearInterval(wsReconnTimer);
     wsReconnTimer = null;
-    // heartbeat ping toutes les 25s
     ws._pingInterval = setInterval(() => {
-      if (ws.readyState === WebSocket.OPEN) ws.send('ping');
+      if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({t: 'ping'}));
     }, 25000);
     apiGetStatus();
-    apiGetRemotes();
   };
 
   ws.onmessage = e => {
@@ -157,12 +153,21 @@ function wsConnect() {
   ws.onclose = () => {
     clearInterval(ws._pingInterval);
     updateWsDot('disconnected');
-    consoleLog('SYS', 'WebSocket fermé — reconnexion dans 5s');
+    consoleLog('SYS', 'WebSocket ferme — reconnexion dans 5s');
     if (!wsReconnTimer) wsReconnTimer = setInterval(wsConnect, 5000);
   };
 }
 
 function handleWsMessage(msg) {
+  // Gestion des reponses WS avec reqId (promesses)
+  if (msg.reqId !== undefined && wsPending.has(msg.reqId)) {
+    const p = wsPending.get(msg.reqId);
+    clearTimeout(p.timer);
+    wsPending.delete(msg.reqId);
+    p.resolve(msg);
+    return;
+  }
+
   switch (msg.type) {
     case 'status':
       status = msg;
@@ -171,90 +176,77 @@ function handleWsMessage(msg) {
     case 'event':
       handleEvent(msg);
       break;
+    case 'remote':
+      incomingRemotes.push({
+        id: msg.id,
+        label: msg.label,
+        addr: msg.addr,
+        proto: msg.proto,
+        protoName: msg.protoName,
+        active: msg.active,
+        isGroup: msg.isGroup,
+        rollingCode: msg.rollingCode
+      });
+      break;
+    case 'remotes_end':
+      remotes = incomingRemotes;
+      incomingRemotes = [];
+      renderRemotesTable();
+      renderDomotique();
+      break;
     case 'log':
       consoleLog('LOG', msg.msg, msg.ts);
       break;
     case 'pong':
+      break;
+    case 'scan_result':
+      // handled by promise
       break;
     default:
       consoleLog('LOG', JSON.stringify(msg));
   }
 }
 
-function handleEvent(msg) {
-  const type = msg.evtType;
-  const label = `[${msg.protoName || '?'}] ${msg.remote || '—'}`;
-
-  if (type === 'frame' || type === 'raw') {
-    addFrame(msg);
-    consoleLog('RX', `${label} → ${msg.cmd} (code=${msg.rolling})`);
-    beep(660, 50);
-    if (cfg.notif && document.hidden) {
-      notify(`RF reçu : ${msg.remote} — ${msg.cmd}`);
-    }
-  } else if (type === 'tx') {
-    addFrame({ ...msg, isTx: true });
-    consoleLog('TX', `${label} ← ${msg.cmd} (code=${msg.rolling})`);
-    beep(880, 80);
-    // Met à jour le rolling code affiché localement immédiatement
-    const r = remotes.find(r => r.addr === msg.addr || r.label === msg.remote);
-    if (r) { r.rollingCode = (msg.rolling || 0) + 1; renderRemotesTable(); }
-  } else if (type === 'paired') {
-    consoleLog('PAIR', `Appairage réussi : ${label} (code=${msg.rolling})`);
-    toast(`Appairage réussi : ${msg.remote}`, 'ok', 5000);
-    beep(440, 100); setTimeout(() => beep(880, 100), 150);
-    stopLearning();
-    apiGetRemotes();
-    broadcastStatus();
-  } else if (type === 'learn_timeout') {
-    consoleLog('PAIR', 'Appairage expiré (20s)');
-    toast('Appairage expiré — aucun signal reçu', 'warn');
-    stopLearning();
+function wsSend(obj) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(obj));
   }
+}
+
+function wsSendRequest(obj, timeout = 3000) {
+  return new Promise((resolve, reject) => {
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      reject(new Error('WS non connecte'));
+      return;
+    }
+    const reqId = ++wsReqId;
+    obj.reqId = reqId;
+    const timer = setTimeout(() => {
+      wsPending.delete(reqId);
+      reject(new Error('WS timeout'));
+    }, timeout);
+    wsPending.set(reqId, { resolve, reject, timer });
+    ws.send(JSON.stringify(obj));
+  });
 }
 
 function updateWsDot(state) {
   const dot = $('ws-indicator');
-  dot.className = `dot ${state}`;
+  if (dot) dot.className = `dot ${state}`;
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  API REST
+//  API WS (remplace REST)
 // ═══════════════════════════════════════════════════════════════
-function apiUrl(path) { return `http://${cfg.ip}:${cfg.port}${path}`; }
-
-async function apiFetch(path, options = {}) {
-  const headers = { 'Content-Type': 'application/json' };
-  if (cfg.token) headers['X-Auth-Token'] = cfg.token;
-  try {
-    const res = await fetch(apiUrl(path), { ...options, headers: { ...headers, ...options.headers } });
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
-    return json;
-  } catch(e) {
-    consoleLog('ERR', `API ${path}: ${e.message}`);
-    throw e;
-  }
+function apiGetStatus() {
+  wsSend({t: 'get_status'});
 }
 
-async function apiGetStatus() {
-  try {
-    const s = await apiFetch('/api/status');
-    status = s;
-    renderStatus(s);
-  } catch(e) { /* déjà loggué */ }
+function apiGetRemotes() {
+  wsSend({t: 'get_status'});
 }
 
-async function apiGetRemotes() {
-  try {
-    const arr = await apiFetch('/api/remotes');
-    remotes = arr;
-    renderRemotesTable();
-    renderDomotique();
-  } catch(e) { /* déjà loggué */ }
-}
-
-async function apiSend(id, cmd) {
+function apiSend(id, cmd) {
   const r = remotes[id];
   if (!r) return;
   const card = document.querySelector(`.remote-card[data-id="${id}"]`);
@@ -262,110 +254,97 @@ async function apiSend(id, cmd) {
   try {
     if (card) card.classList.add('active-tx');
     if (statusEl) { statusEl.textContent = 'Envoi…'; statusEl.className = 'rc-status'; }
-    await apiFetch('/api/remotes_send', {
-      method: 'POST',
-      body: JSON.stringify({ id, cmd }),
-    });
+    wsSend({t: 'tx', id: id, cmd: cmd});
     if (statusEl) { statusEl.textContent = `✓ ${cmd}`; statusEl.className = 'rc-status ok'; }
     setTimeout(() => { if (statusEl) { statusEl.textContent = ''; statusEl.className = 'rc-status'; } }, 2500);
   } catch(e) {
-    if (statusEl) { statusEl.textContent = `Erreur`; statusEl.className = 'rc-status err'; }
+    if (statusEl) { statusEl.textContent = 'Erreur'; statusEl.className = 'rc-status err'; }
     toast(`Erreur TX : ${e.message}`, 'err');
   } finally {
     if (card) { setTimeout(() => card.classList.remove('active-tx'), 600); }
   }
 }
 
-async function apiDeleteRemote(id) {
+function apiDeleteRemote(id) {
   if (!confirm(`Supprimer "${remotes[id]?.label}" ?`)) return;
-  try {
-    await apiFetch('/api/remotes_delete', { method: 'POST', body: JSON.stringify({ id }) });
-    toast(`Télécommande supprimée`, 'ok');
-    apiGetRemotes();
-  } catch(e) { toast(`Erreur : ${e.message}`, 'err'); }
+  wsSend({t: 'del_remote', id: id});
+  toast('Telecommande supprimee', 'ok');
 }
 
-async function apiUpdateRemote(id, data) {
-  try {
-    await apiFetch('/api/remotes_update', { method: 'POST', body: JSON.stringify({ id, ...data }) });
-    apiGetRemotes();
-  } catch(e) { toast(`Erreur : ${e.message}`, 'err'); }
+function apiUpdateRemote(id, data) {
+  if (data.label !== undefined) {
+    wsSend({t: 'rename', id: id, label: data.label});
+  }
+  if (data.active !== undefined) {
+    wsSend({t: 'set_active', id: id, active: data.active});
+  }
 }
 
-async function apiRelay(state, autoOffMs = 0) {
-  try {
-    await apiFetch('/api/relay', { method: 'POST', body: JSON.stringify({ state, autoOff: autoOffMs }) });
-    updateRelayUi(state);
-  } catch(e) { toast(`Erreur relais : ${e.message}`, 'err'); }
+function apiRelay(state, autoOffMs = 0) {
+  wsSend({t: 'relay', state: state, ms: autoOffMs});
+  updateRelayUi(state);
 }
 
-async function apiPulse(ms) {
-  try {
-    await apiFetch('/api/pulse', { method: 'POST', body: JSON.stringify({ ms }) });
-    toast(`Impulsion relais ${ms}ms`, 'info');
-    updateRelayUi(true);
-    setTimeout(() => updateRelayUi(false), ms);
-  } catch(e) { toast(`Erreur : ${e.message}`, 'err'); }
+function apiPulse(ms) {
+  wsSend({t: 'relay', state: true, ms: ms});
+  toast(`Impulsion relais ${ms}ms`, 'info');
+  updateRelayUi(true);
+  setTimeout(() => updateRelayUi(false), ms);
 }
 
-async function apiSetProtocol(proto, customCfg = {}) {
-  try {
-    await apiFetch('/api/protocol', {
-      method: 'POST',
-      body: JSON.stringify({ proto, ...customCfg }),
-    });
-    consoleLog('SYS', `Protocole → ${PRESETS[proto]?.name || 'Custom'}`);
-    toast(`Protocole : ${PRESETS[proto]?.name || 'Custom'}`, 'info');
-  } catch(e) { toast(`Erreur : ${e.message}`, 'err'); }
+function apiSetProtocol(proto, customCfg = {}) {
+  const obj = {t: 'set_proto', proto: proto, ...customCfg};
+  wsSend(obj);
+  consoleLog('SYS', `Protocole → ${PRESETS[proto]?.name || 'Custom'}`);
+  toast(`Protocole : ${PRESETS[proto]?.name || 'Custom'}`, 'info');
 }
 
-async function apiStartLearn(proto) {
-  try {
-    await apiFetch('/api/learn', { method: 'POST', body: JSON.stringify({ proto }) });
-  } catch(e) { toast(`Erreur appairage : ${e.message}`, 'err'); }
+function apiStartLearn(proto) {
+  wsSend({t: 'learn', proto: proto});
 }
 
-async function apiCancelLearn() {
-  try { await apiFetch('/api/learn/cancel', { method: 'POST' }); } catch {}
+function apiCancelLearn() {
+  wsSend({t: 'learn_cancel'});
 }
 
-async function apiCreateRemote(data) {
-  try {
-    const res = await apiFetch('/api/remotes', { method: 'POST', body: JSON.stringify(data) });
-    toast(`Télécommande créée : ${data.label}`, 'ok');
-    apiGetRemotes();
-    return res;
-  } catch(e) { toast(`Erreur : ${e.message}`, 'err'); return null; }
+function apiCreateRemote(data) {
+  wsSend({
+    t: 'new_remote',
+    label: data.label,
+    proto: data.proto,
+    group: data.isGroup,
+    isGroup: data.isGroup,
+    addr: data.addr,
+    start: data.startCode,
+    startCode: data.startCode
+  });
+  toast(`Telecommande creee : ${data.label}`, 'ok');
 }
 
-async function apiSendProg(id) {
-  await apiSend(id, 'PROG');
-  $('pair-result').textContent = '✓ PROG envoyé — attendez 2 clignotements du LED moteur';
+function apiSendProg(id) {
+  apiSend(id, 'PROG');
+  $('pair-result').textContent = '✓ PROG envoye — attendez 2 clignotements du LED moteur';
 }
 
-async function apiSetTxPower(dbm) {
-  try {
-    await apiFetch('/api/txpower', { method: 'POST', body: JSON.stringify({ dbm }) });
-  } catch(e) { toast(`Erreur TX power : ${e.message}`, 'err'); }
+function apiSetTxPower(dbm) {
+  wsSend({t: 'set_txpower', dbm: dbm});
 }
 
-async function apiReboot() {
-  if (!confirm('Redémarrer la carte ?')) return;
-  try {
-    await apiFetch('/api/reboot', { method: 'POST' });
-    toast('Redémarrage en cours…', 'warn');
-    setTimeout(wsConnect, 5000);
-  } catch(e) {}
+function apiReboot() {
+  if (!confirm('Redemarrer la carte ?')) return;
+  wsSend({t: 'reboot'});
+  toast('Redemarrage en cours…', 'warn');
+  setTimeout(wsConnect, 5000);
 }
 
 async function apiScanRssi() {
   try {
-    const r = await apiFetch('/api/scan');
-    return r.rssi;
+    const res = await wsSendRequest({t: 'scan_rssi'}, 2000);
+    return res.rssi;
   } catch { return null; }
 }
 
-function broadcastStatus() { apiGetStatus(); apiGetRemotes(); }
+function broadcastStatus() { apiGetStatus(); }
 
 // ═══════════════════════════════════════════════════════════════
 //  RENDER — STATUS
@@ -374,28 +353,23 @@ function renderStatus(s) {
   if (!s) return;
   activeProto = s.protocol ?? activeProto;
 
-  // Barre de statut
   $('rssi-display').textContent = s.rssi ? `${s.rssi} dBm` : '—';
   $('proto-badge').textContent  = s.protoName || '—';
   $('relay-led').className      = `dot ${s.relay ? 'on' : 'off'}`;
   updateRelayUi(s.relay);
 
-  // Paramètres radio
   if (s.freq)  { $('p-freq').value = s.freq; }
   if (s.bw)    { $('p-bw').value   = s.bw;   $('p-bw-range').value   = s.bw; }
   if (s.dev)   { $('p-dev').value  = s.dev;  $('p-dev-range').value  = s.dev; }
   if (s.mod    !== undefined)      $('p-mod').value = s.mod;
   if (s.txPower !== undefined)     { $('p-tx').value = s.txPower; $('p-tx-range').value = s.txPower; }
 
-  // Boutons presets — highlight celui actif
   document.querySelectorAll('.preset-btn').forEach(b => {
     b.classList.toggle('active', parseInt(b.dataset.proto) === activeProto);
   });
 
-  // Mise à jour fréquence sur le tuner
   if (s.freq) setTunerFreq(s.freq);
 
-  // Onglet réglages — info système
   $('si-ip').textContent       = s.ip || cfg.ip;
   $('si-hostname').textContent = s.hostname || '—';
   $('si-proto').textContent    = s.protoName || '—';
@@ -405,7 +379,6 @@ function renderStatus(s) {
   $('si-fw').textContent       = s.firmwareVersion || '—';
   $('si-remotes').textContent  = s.remoteCount ?? '—';
 
-  // RSSI history
   if (typeof s.rssi === 'number') {
     rssiHistory.push(s.rssi);
     if (rssiHistory.length > 60) rssiHistory.shift();
@@ -416,11 +389,11 @@ function renderStatus(s) {
 
 function updateRelayUi(on) {
   const el = $('relay-status-text');
-  if (el) { el.textContent = on ? 'FERMÉ' : 'OUVERT'; el.className = on ? 'active' : ''; }
+  if (el) { el.textContent = on ? 'FERME' : 'OUVERT'; el.className = on ? 'active' : ''; }
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  TUNER CANVAS — POSTE RADIO VINTAGE
+//  TUNER CANVAS
 // ═══════════════════════════════════════════════════════════════
 function setTunerFreq(mhz) {
   tunerNeedleX = clamp((mhz - TUNER_MIN_MHZ) / (TUNER_MAX_MHZ - TUNER_MIN_MHZ), 0, 1);
@@ -459,19 +432,16 @@ function drawTuner(currentMhz) {
 
   ctx.clearRect(0, 0, W, H);
 
-  // Fond dégradé "papier vieilli"
   const bg = ctx.createLinearGradient(0, 0, 0, H);
   bg.addColorStop(0, '#0c1820');
   bg.addColorStop(1, '#060c12');
   ctx.fillStyle = bg;
   ctx.fillRect(0, 0, W, H);
 
-  // Ligne de base
   ctx.strokeStyle = 'rgba(62,207,255,0.15)';
   ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(0, H-22); ctx.lineTo(W, H-22); ctx.stroke();
 
-  // Marqueurs de protocoles connus
   const markers = [
     { mhz: 433.42, label: 'SOMFY',  color: '#3ecfff' },
     { mhz: 433.92, label: 'MOOVO/NICE', color: '#2de08a' },
@@ -492,12 +462,11 @@ function drawTuner(currentMhz) {
     ctx.fillText(m.label, x+4, 20);
   });
 
-  // Graduations
-  const step = 0.1; // tous les 100 kHz
+  const step = 0.1;
   for (let f = TUNER_MIN_MHZ; f <= TUNER_MAX_MHZ + 0.01; f = Math.round((f + step) * 100) / 100) {
     const x = freqToX(f, W);
-    const isMajor = Math.round(f * 10) % 10 === 0; // tous les MHz
-    const isMid   = Math.round(f * 10) % 5 === 0;  // tous les 0.5 MHz
+    const isMajor = Math.round(f * 10) % 10 === 0;
+    const isMid   = Math.round(f * 10) % 5 === 0;
     const tickH = isMajor ? 22 : (isMid ? 14 : 8);
     ctx.strokeStyle = isMajor ? 'rgba(62,207,255,0.6)'
                    : isMid   ? 'rgba(62,207,255,0.3)'
@@ -521,7 +490,6 @@ function drawTuner(currentMhz) {
     }
   }
 
-  // Halo sous l'aiguille courante
   const nx = freqToX(currentMhz || (TUNER_MIN_MHZ + TUNER_MAX_MHZ)/2, W);
   const halo = ctx.createRadialGradient(nx, H-22, 0, nx, H-22, 40);
   halo.addColorStop(0, 'rgba(240,64,96,0.2)');
@@ -529,12 +497,10 @@ function drawTuner(currentMhz) {
   ctx.fillStyle = halo;
   ctx.fillRect(nx-50, H-60, 100, 40);
 
-  // Fil de guidage horizontal (le fameux fil métallique du poste radio)
   ctx.strokeStyle = 'rgba(200,220,255,0.18)';
   ctx.lineWidth = 0.8;
   ctx.beginPath(); ctx.moveTo(0, H-40); ctx.lineTo(W, H-40); ctx.stroke();
 
-  // Légende bandes
   ctx.fillStyle = 'rgba(62,207,255,0.2)';
   ctx.font = '9px Rajdhani, sans-serif';
   ctx.textAlign = 'left';
@@ -563,11 +529,9 @@ function renderRssiCanvas(dbm) {
   const W = canvas.width, H = canvas.height;
   ctx.clearRect(0, 0, W, H);
 
-  // Fond
   ctx.fillStyle = '#060810';
   ctx.fillRect(0, 0, W, H);
 
-  // Niveaux de référence
   const levels = [
     { dbm: -50, label: 'Excellent' },
     { dbm: -70, label: 'Bon' },
@@ -585,7 +549,6 @@ function renderRssiCanvas(dbm) {
     ctx.fillText(`${l.dbm} ${l.label}`, W-68, y+3);
   });
 
-  // Historique en miniature (sparkline gauche)
   if (rssiHistory.length > 1) {
     ctx.beginPath();
     rssiHistory.forEach((v, i) => {
@@ -598,7 +561,6 @@ function renderRssiCanvas(dbm) {
     ctx.stroke();
   }
 
-  // Barre principale
   const barH = H - dbmToY(dbm, H);
   const grad = ctx.createLinearGradient(0, H, 0, H - barH);
   const c = rssiToColor(dbm);
@@ -607,13 +569,11 @@ function renderRssiCanvas(dbm) {
   ctx.fillStyle = grad;
   ctx.fillRect(W - 55, H - barH, 22, barH);
 
-  // Valeur numérique
   $('rssi-num').textContent = typeof dbm === 'number' ? dbm.toFixed(1) : '—';
   $('rssi-num').style.color = typeof dbm === 'number' ? rssiToColor(dbm) : '#48566a';
 }
 
 function dbmToY(dbm, H) {
-  // -110 dBm en bas, -30 dBm en haut
   return H - clamp((dbm + 110) / 80, 0, 1) * H;
 }
 
@@ -633,7 +593,7 @@ function renderRssiHistory() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  FRAMES TEMPS-RÉEL
+//  FRAMES TEMPS-REEL
 // ═══════════════════════════════════════════════════════════════
 function addFrame(msg) {
   frames.unshift(msg);
@@ -670,7 +630,7 @@ function renderRemotesTable() {
   body.innerHTML = '';
 
   if (!remotes.length) {
-    body.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text3);font-family:var(--mono);font-size:0.8rem">Aucune télécommande. Créez-en une ou appairez depuis une vraie télécommande.</div>';
+    body.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text3);font-family:var(--mono);font-size:0.8rem">Aucune telecommande. Creez-en une ou appairez depuis une vraie telecommande.</div>';
     return;
   }
 
@@ -697,14 +657,12 @@ function renderRemotesTable() {
     body.appendChild(row);
   });
 
-  // Toggle actif
   body.querySelectorAll('input[type=checkbox]').forEach(cb => {
     cb.addEventListener('change', () => {
       apiUpdateRemote(parseInt(cb.dataset.id), { active: cb.checked });
     });
   });
 
-  // Boutons
   body.querySelectorAll('[data-action]').forEach(btn => {
     btn.addEventListener('click', () => {
       const id = parseInt(btn.dataset.id);
@@ -804,7 +762,6 @@ function appendConsoleLine(entry) {
   const out = $('console-output');
   if (!out) return;
 
-  // Filtres
   const filters = {
     LOG: $('flt-log')?.checked,
     EVENT: $('flt-event')?.checked,
@@ -878,7 +835,7 @@ function notify(msg) {
 function startLearning(proto) {
   learningActive = true;
   $('learn-progress').classList.remove('hidden');
-  $('learn-status-text').textContent = `Écoute ${PRESETS[proto]?.name || '?'}…`;
+  $('learn-status-text').textContent = `Ecoute ${PRESETS[proto]?.name || '?'}…`;
   let count = 20;
   $('learn-countdown').textContent = count;
   clearInterval(learnCountdownTimer);
@@ -888,7 +845,7 @@ function startLearning(proto) {
     if (count <= 0) stopLearning();
   }, 1000);
   apiStartLearn(proto);
-  consoleLog('PAIR', `Appairage démarré: ${PRESETS[proto]?.name}. Appuyez sur PROG de la télécommande physique.`);
+  consoleLog('PAIR', `Appairage demarre: ${PRESETS[proto]?.name}. Appuyez sur PROG de la telecommande physique.`);
   toast(`Appairage ${PRESETS[proto]?.name} — appuyez sur PROG`, 'warn', 20000);
 }
 
@@ -899,7 +856,7 @@ function stopLearning() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  SCAN RSSI EN CONTINU (quand onglet Radio actif)
+//  SCAN RSSI EN CONTINU
 // ═══════════════════════════════════════════════════════════════
 let rssiScanInterval = null;
 
@@ -934,7 +891,6 @@ function switchTab(name) {
   if (name === 'domotique') renderDomotique();
   if (name === 'remotes') {
     renderRemotesTable();
-    // Met à jour la liste des groupes pour le modal d'appairage groupe
     const sel = $('pair-group-select');
     if (sel) {
       sel.innerHTML = '';
@@ -949,7 +905,7 @@ function switchTab(name) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  THÈME
+//  THEME
 // ═══════════════════════════════════════════════════════════════
 function applyTheme(theme) {
   cfg.theme = theme;
@@ -961,7 +917,7 @@ function applyTheme(theme) {
 // ═══════════════════════════════════════════════════════════════
 function sendToAll(cmd) {
   const somfyRemotes = remotes.filter(r => r.proto === 0);
-  if (!somfyRemotes.length) { toast('Aucune télécommande Somfy', 'warn'); return; }
+  if (!somfyRemotes.length) { toast('Aucune telecommande Somfy', 'warn'); return; }
   somfyRemotes.forEach(r => apiSend(remotes.indexOf(r), cmd));
   toast(`${cmd} → ${somfyRemotes.length} volet(s)`, 'info');
 }
@@ -972,7 +928,6 @@ function sendToAll(cmd) {
 function init() {
   applyTheme(cfg.theme);
 
-  // Remplir les champs de réglages
   $('s-ip').value    = cfg.ip;
   $('s-port').value  = cfg.port;
   $('s-token').value = cfg.token;
@@ -980,25 +935,21 @@ function init() {
   if ($('s-sounds')) $('s-sounds').checked = cfg.sounds;
   if ($('s-notif'))  $('s-notif').checked  = cfg.notif;
 
-  // Tabs
   document.querySelectorAll('.tab').forEach(tab => {
     tab.addEventListener('click', () => switchTab(tab.dataset.tab));
   });
 
-  // Presets radio
   document.querySelectorAll('.preset-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const proto = parseInt(btn.dataset.proto);
       const p = PRESETS[proto];
       if (!p) return;
-      // Met à jour les sliders
       $('p-freq').value = p.freq;
       $('p-bw').value   = p.bw;   $('p-bw-range').value   = p.bw;
       $('p-dev').value  = p.dev;  $('p-dev-range').value  = p.dev;
       $('p-mod').value  = p.mod;
       setTunerFreq(p.freq);
       if (proto !== 3) {
-        // Protocoles prédéfinis → appliquer directement
         apiSetProtocol(proto);
         if (p.note) toast(p.note, 'warn', 8000);
       }
@@ -1006,19 +957,16 @@ function init() {
     });
   });
 
-  // Sync sliders ↔ inputs
   [['p-bw-range','p-bw'],['p-dev-range','p-dev'],['p-tx-range','p-tx']].forEach(([rid, nid]) => {
     $(rid).addEventListener('input', () => $(nid).value = $(rid).value);
     $(nid).addEventListener('input', () => $(rid).value = $(nid).value);
   });
 
-  // Freq input → tuner
   $('p-freq').addEventListener('input', () => {
     const v = parseFloat($('p-freq').value);
     if (!isNaN(v)) setTunerFreq(v);
   });
 
-  // Appliquer réglages custom
   $('btn-apply-custom').addEventListener('click', () => {
     const customCfg = {
       freq: parseFloat($('p-freq').value),
@@ -1028,7 +976,7 @@ function init() {
     };
     apiSetProtocol(3, customCfg);
     apiSetTxPower(parseInt($('p-tx').value));
-    toast('Réglages radio appliqués', 'info');
+    toast('Reglages radio appliques', 'info');
   });
 
   $('btn-reset-proto').addEventListener('click', () => {
@@ -1038,15 +986,12 @@ function init() {
     setTunerFreq(p.freq);
   });
 
-  // Effacer trames
   $('btn-clear-frames').addEventListener('click', () => { frames = []; renderFrames(); });
 
-  // Domotique — commandes globales
   $('btn-all-up').addEventListener('click', () => sendToAll('MONTER'));
   $('btn-all-my').addEventListener('click', () => sendToAll('MY'));
   $('btn-all-down').addEventListener('click', () => sendToAll('DESCENDRE'));
 
-  // Relais
   $('btn-relay-on').addEventListener('click', () => apiRelay(true));
   $('btn-relay-off').addEventListener('click', () => apiRelay(false));
   $('btn-relay-pulse').addEventListener('click', () => {
@@ -1054,7 +999,6 @@ function init() {
     apiPulse(ms);
   });
 
-  // Appairage
   document.querySelectorAll('.btn-learn').forEach(btn => {
     btn.addEventListener('click', () => {
       const proto = parseInt(btn.dataset.proto);
@@ -1065,10 +1009,9 @@ function init() {
   $('btn-learn-cancel').addEventListener('click', () => {
     apiCancelLearn();
     stopLearning();
-    toast('Appairage annulé', 'warn');
+    toast('Appairage annule', 'warn');
   });
 
-  // Nouvelle télécommande
   $('btn-new-remote').addEventListener('click', () => $('modal-new-remote').classList.remove('hidden'));
   $('btn-nr-cancel').addEventListener('click', () => $('modal-new-remote').classList.add('hidden'));
   $('btn-nr-confirm').addEventListener('click', async () => {
@@ -1083,8 +1026,6 @@ function init() {
     $('nr-label').value = '';
   });
 
-  // Modal groupe — guide appairage Somfy
-  // (accessible via menu contextuel futur, ou bouton dans domotique)
   $('btn-send-prog').addEventListener('click', () => {
     const id = parseInt($('pair-group-select').value);
     if (isNaN(id)) return;
@@ -1092,7 +1033,6 @@ function init() {
   });
   $('btn-modal-group-close').addEventListener('click', () => $('modal-group-pair').classList.add('hidden'));
 
-  // Console
   $('btn-clear-console').addEventListener('click', () => {
     consoleLogs.length = 0;
     $('console-output').innerHTML = '';
@@ -1109,18 +1049,16 @@ function init() {
     $('debug-cmd').value = '';
   });
 
-  // Filtres console
   ['flt-log','flt-event','flt-status','flt-tx','flt-rx'].forEach(id => {
     $(id)?.addEventListener('change', refilterConsole);
   });
 
-  // Réglages — connexion
   $('btn-save-connection').addEventListener('click', () => {
     cfg.ip    = $('s-ip').value.trim()    || DEFAULT_IP;
     cfg.port  = parseInt($('s-port').value) || DEFAULT_PORT;
     cfg.token = $('s-token').value.trim();
     saveConfig();
-    toast('Connexion mise à jour — reconnexion…', 'ok');
+    toast('Connexion mise a jour — reconnexion…', 'ok');
     ws && ws.close();
     setTimeout(wsConnect, 500);
   });
@@ -1129,44 +1067,43 @@ function init() {
     const el = $('conn-test-result');
     el.textContent = 'Test…'; el.className = '';
     try {
-      const s = await apiFetch('/api/status');
-      el.textContent = `✓ OK — ${s.hostname || cfg.ip}`;
-      el.className = 'ok';
+      wsSend({t: 'ping'});
+      // On considere que si WS est ouvert, c'est OK
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        el.textContent = `✓ OK — ${cfg.ip}`;
+        el.className = 'ok';
+      } else {
+        throw new Error('WS ferme');
+      }
     } catch {
       el.textContent = '✕ Inaccessible';
       el.className = 'err';
     }
   });
 
-  // Réglages UI
   $('s-theme').addEventListener('change', () => applyTheme($('s-theme').value));
   $('btn-save-ui').addEventListener('click', () => {
     cfg.sounds = $('s-sounds').checked;
     cfg.notif  = $('s-notif').checked;
     cfg.theme  = $('s-theme').value;
     saveConfig();
-    toast('Préférences sauvegardées', 'ok');
+    toast('Preferences sauvegardees', 'ok');
     if (cfg.notif) requestNotifPermission();
   });
 
   $('btn-reboot').addEventListener('click', apiReboot);
 
-  // Resize → redraw canvas
   window.addEventListener('resize', () => {
     drawTuner(parseFloat($('p-freq')?.value || 433.42));
   });
 
-  // Init tuner
   drawTuner(433.42);
   setTunerFreq(433.42);
 
-  // Lancer WS
   wsConnect();
-
-  // Scan RSSI initial (onglet radio actif par défaut)
   startRssiScan();
 
-  consoleLog('SYS', `RF Gateway UI démarrée — cible: ${cfg.ip}:${cfg.port}`);
+  consoleLog('SYS', `RF Gateway UI v2.1 demarree — cible: ${cfg.ip}:${cfg.port}`);
   if (cfg.notif) requestNotifPermission();
 }
 
