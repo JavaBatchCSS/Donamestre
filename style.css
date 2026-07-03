@@ -1,7 +1,7 @@
 /* ============================================================
-   RF GATEWAY — style.css
-   Thème : console radio amateur / receiver vintage
-   Aucune dépendance externe sauf Google Fonts (chargées en HTML)
+   RF GATEWAY — style.css  v2.1
+   Theme : console radio amateur / receiver vintage
+   Aucune dependance externe sauf Google Fonts (chargees en HTML)
    ============================================================ */
 
 /* ─── VARIABLES ─── */
@@ -17,6 +17,7 @@
   --accent-glow:rgba(62,207,255,0.28);
   --green:      #2de08a;
   --green-dim:  rgba(45,224,138,0.15);
+  --green-glow: 0 0 8px rgba(45,224,138,0.4);
   --amber:      #f0a830;
   --amber-dim:  rgba(240,168,48,0.14);
   --red:        #f04060;
@@ -146,10 +147,10 @@ a { color: var(--accent); text-decoration: none; }
   display: inline-block;
   transition: var(--trans);
 }
-.dot.connected    { background: var(--green); box-shadow: 0 0 8px var(--green); }
+.dot.connected    { background: var(--green); box-shadow: var(--green-glow); }
 .dot.disconnected { background: var(--red);   box-shadow: 0 0 6px var(--red);   }
 .dot.connecting   { background: var(--amber); animation: pulse-dot 1s infinite; }
-.dot.on  { background: var(--green); box-shadow: 0 0 8px var(--green); }
+.dot.on  { background: var(--green); box-shadow: var(--green-glow); }
 .dot.off { background: var(--text3); }
 
 @keyframes pulse-dot {
@@ -586,7 +587,13 @@ input[type=range]::-webkit-slider-thumb {
   position: relative;
 }
 .remote-card:hover { border-color: var(--border2); }
-.remote-card.active-tx { border-color: var(--amber); }
+.remote-card.active-tx { border-color: var(--amber); animation: tx-pulse 0.6s ease; }
+
+@keyframes tx-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(240,168,48,0.4); }
+  50% { box-shadow: 0 0 12px 2px rgba(240,168,48,0.2); }
+  100% { box-shadow: 0 0 0 0 rgba(240,168,48,0); }
+}
 
 .rc-name {
   font-family: var(--mono);
@@ -675,7 +682,7 @@ input[type=range]::-webkit-slider-thumb {
   min-width: 80px;
   text-align: center;
 }
-#relay-status-text.active { color: var(--green); text-shadow: 0 0 10px var(--green); }
+#relay-status-text.active { color: var(--green); text-shadow: var(--green-glow); }
 
 .relay-pulse-label {
   display: flex;
